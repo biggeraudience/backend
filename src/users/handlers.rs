@@ -12,18 +12,18 @@ pub async fn get_me(
     claims: Claims,
     pool: Data<PgPool>,
 ) -> Result<HttpResponse, AppError> {
+    // Corrected: Specify the return type `User`
     let user = sqlx::query_as!(
         User,
         r#"
         SELECT id, username, email, password_hash, role, created_at, updated_at
         FROM users
-        WHERE id = 
+        WHERE id = $1
         "#,
         claims.user_id
     )
     .fetch_one(pool.get_ref())
-    .await?
-    .ok_or_else(|| AppError::NotFound("User".to_string()))?;
+    .await?;
 
     Ok(HttpResponse::Ok().json(user))
 }
@@ -34,13 +34,14 @@ pub async fn update_me(
     pool: Data<PgPool>,
     payload: web::Json<UpdateProfilePayload>,
 ) -> Result<HttpResponse, AppError> {
-    let mut updated_user = sqlx::query_as!(
+    // Corrected: Specify the return type `User`
+    let updated_user = sqlx::query_as!(
         User,
         r#"
         UPDATE users
-        SET username = COALESCE(, username),
-            email = COALESCE(, email)
-        WHERE id = 
+        SET username = COALESCE($1, username),
+            email = COALESCE($2, email)
+        WHERE id = $3
         RETURNING id, username, email, password_hash, role, created_at, updated_at
         "#,
         payload.username,
@@ -58,6 +59,7 @@ pub async fn update_me(
 pub async fn list_users(
     pool: Data<PgPool>,
 ) -> Result<HttpResponse, AppError> {
+    // Corrected: Specify the return type `User`
     let users = sqlx::query_as!(
         User,
         r#"
@@ -78,12 +80,13 @@ pub async fn get_user_by_id(
     pool: Data<PgPool>,
 ) -> Result<HttpResponse, AppError> {
     let user_id = path.into_inner();
+    // Corrected: Specify the return type `User`
     let user = sqlx::query_as!(
         User,
         r#"
         SELECT id, username, email, password_hash, role, created_at, updated_at
         FROM users
-        WHERE id = 
+        WHERE id = $1
         "#,
         user_id
     )
@@ -108,20 +111,20 @@ pub async fn update_user_role(
         return Err(AppError::ValidationError("Invalid role specified. Must be 'user' or 'admin'".to_string()));
     }
 
+    // Corrected: Specify the return type `User`
     let updated_user = sqlx::query_as!(
         User,
         r#"
         UPDATE users
-        SET role = 
-        WHERE id = 
+        SET role = $1
+        WHERE id = $2
         RETURNING id, username, email, password_hash, role, created_at, updated_at
         "#,
         new_role,
         user_id
     )
     .fetch_one(pool.get_ref())
-    .await?
-    .ok_or_else(|| AppError::NotFound("User".to_string()))?;
+    .await?;
 
     Ok(HttpResponse::Ok().json(updated_user))
 }

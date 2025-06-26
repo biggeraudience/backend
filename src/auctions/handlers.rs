@@ -11,6 +11,7 @@ use crate::auctions::models::{Auction, Bid, CreateAuctionPayload, UpdateAuctionP
 // Public Endpoints
 #[get("/")]
 pub async fn get_all_auctions(pool: Data<PgPool>) -> Result<HttpResponse, AppError> {
+    // Corrected: Specify the return type `Auction`
     let auctions = sqlx::query_as!(
         Auction,
         r#"
@@ -37,7 +38,7 @@ pub async fn get_auction_detail(
         r#"
         SELECT id, vehicle_id, start_time, end_time, starting_bid, current_highest_bid, highest_bidder_id, status, created_at, updated_at
         FROM auctions
-        WHERE id = 
+        WHERE id = $1
         "#,
         auction_id
     )
@@ -66,7 +67,7 @@ pub async fn place_bid(
         r#"
         SELECT id, vehicle_id, start_time, end_time, starting_bid, current_highest_bid, highest_bidder_id, status, created_at, updated_at
         FROM auctions
-        WHERE id =  FOR UPDATE
+        WHERE id = $1 FOR UPDATE
         "#,
         auction_id
     )
@@ -94,11 +95,12 @@ pub async fn place_bid(
 
 
     // Insert new bid
+    // Corrected: Specify the return type `Bid`
     let new_bid = sqlx::query_as!(
         Bid,
         r#"
         INSERT INTO bids (auction_id, bidder_id, bid_amount, bid_time)
-        VALUES (, , , )
+        VALUES ($1, $2, $3, $4)
         RETURNING id, auction_id, bidder_id, bid_amount, bid_time
         "#,
         auction_id,
@@ -113,9 +115,9 @@ pub async fn place_bid(
     sqlx::query!(
         r#"
         UPDATE auctions
-        SET current_highest_bid = ,
-            highest_bidder_id = 
-        WHERE id = 
+        SET current_highest_bid = $1,
+            highest_bidder_id = $2
+        WHERE id = $3
         "#,
         bid_amount,
         claims.user_id,
@@ -144,11 +146,12 @@ pub async fn create_auction(
     }
     // TODO: Verify vehicle_id exists and is available for auction
 
+    // Corrected: Specify the return type `Auction`
     let new_auction = sqlx::query_as!(
         Auction,
         r#"
         INSERT INTO auctions (vehicle_id, start_time, end_time, starting_bid, status)
-        VALUES (, , , , )
+        VALUES ($1, $2, $3, $4, $5)
         RETURNING id, vehicle_id, start_time, end_time, starting_bid, current_highest_bid, highest_bidder_id, status, created_at, updated_at
         "#,
         payload.vehicle_id,
@@ -178,15 +181,16 @@ pub async fn update_auction(
         }
     }
 
+    // Corrected: Specify the return type `Auction`
     let updated_auction = sqlx::query_as!(
         Auction,
         r#"
         UPDATE auctions
-        SET start_time = COALESCE(, start_time),
-            end_time = COALESCE(, end_time),
-            starting_bid = COALESCE(, starting_bid),
-            status = COALESCE(, status)
-        WHERE id = 
+        SET start_time = COALESCE($1, start_time),
+            end_time = COALESCE($2, end_time),
+            starting_bid = COALESCE($3, starting_bid),
+            status = COALESCE($4, status)
+        WHERE id = $5
         RETURNING id, vehicle_id, start_time, end_time, starting_bid, current_highest_bid, highest_bidder_id, status, created_at, updated_at
         "#,
         payload.start_time,
@@ -211,7 +215,7 @@ pub async fn delete_auction(
     let deleted = sqlx::query!(
         r#"
         DELETE FROM auctions
-        WHERE id = 
+        WHERE id = $1
         RETURNING id
         "#,
         auction_id

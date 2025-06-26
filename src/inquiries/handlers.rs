@@ -22,11 +22,12 @@ pub async fn submit_inquiry(
 
     let user_id = claims.map(|c| c.user_id);
 
+    // Corrected: Specify the return type `Inquiry`
     let new_inquiry = sqlx::query_as!(
         Inquiry,
         r#"
         INSERT INTO inquiries (user_id, name, email, phone, subject, message, status)
-        VALUES (, , , , , , 'new')
+        VALUES ($1, $2, $3, $4, $5, $6, 'new')
         RETURNING id, user_id, name, email, phone, subject, message, status, created_at, updated_at
         "#,
         user_id,
@@ -45,6 +46,7 @@ pub async fn submit_inquiry(
 // Admin Endpoints
 #[get("/")]
 pub async fn list_inquiries(pool: Data<PgPool>) -> Result<HttpResponse, AppError> {
+    // Corrected: Specify the return type `Inquiry`
     let inquiries = sqlx::query_as!(
         Inquiry,
         r#"
@@ -73,12 +75,13 @@ pub async fn update_inquiry_status(
         return Err(AppError::ValidationError("Invalid status. Must be 'new', 'in_progress', 'resolved', or 'closed'".to_string()));
     }
 
+    // Corrected: Specify the return type `Inquiry`
     let updated_inquiry = sqlx::query_as!(
         Inquiry,
         r#"
         UPDATE inquiries
-        SET status = 
-        WHERE id = 
+        SET status = $1
+        WHERE id = $2
         RETURNING id, user_id, name, email, phone, subject, message, status, created_at, updated_at
         "#,
         new_status,
@@ -100,7 +103,7 @@ pub async fn delete_inquiry(
     let deleted = sqlx::query!(
         r#"
         DELETE FROM inquiries
-        WHERE id = 
+        WHERE id = $1
         RETURNING id
         "#,
         inquiry_id

@@ -20,11 +20,12 @@ pub async fn register(
 
     let hashed_password = hash_password(&payload.password).await?;
 
+    // Corrected: Use positional placeholders ($1, $2, $3) and specify the return type `User`
     let new_user = sqlx::query_as!(
         User,
         r#"
         INSERT INTO users (username, email, password_hash, role)
-        VALUES (, , , 'user')
+        VALUES ($1, $2, $3, 'user')
         RETURNING id, username, email, password_hash, role, created_at, updated_at
         "#,
         payload.username,
@@ -47,12 +48,13 @@ pub async fn login(
         return Err(AppError::ValidationError("Email and password are required.".to_string()));
     }
 
+    // Corrected: Use a positional placeholder ($1) and specify the return type `User`
     let user = sqlx::query_as!(
         User,
         r#"
         SELECT id, username, email, password_hash, role, created_at, updated_at
         FROM users
-        WHERE email = 
+        WHERE email = $1
         "#,
         payload.email
     )
