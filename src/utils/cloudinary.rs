@@ -1,10 +1,11 @@
+// src/utils/cloudinary.rs
 use actix_multipart::Multipart;
 use actix_web::{Error, HttpResponse, web};
 use futures_util::stream::StreamExt;
 use once_cell::sync::Lazy;
 use reqwest::Client;
 use reqwest::multipart::{Form, Part};
-use sha2::{Digest, Sha1};
+use sha2::{Digest, Sha1}; // Use Sha1 from the sha2 crate, as per your Cargo.toml
 use hex;
 use std::env;
 use chrono::Utc;
@@ -33,7 +34,10 @@ pub async fn upload_files_to_cloudinary(mut payload: Multipart) -> Result<Vec<St
 
         let part = Part::bytes(buf.to_vec())
             .file_name(filename.to_string())
-            .mime_str("application/octet-stream")?;
+            .mime_str("application/octet-stream")
+            // The `mime_str` error type doesn't have a `#[from]` impl for AppError,
+            // so we map it to a generic error for now.
+            .map_err(|e| AppError::GenericError(format!("Invalid MIME type string: {}", e)))?;
 
         let form = Form::new()
             .text("api_key", API_KEY.clone())
@@ -46,14 +50,15 @@ pub async fn upload_files_to_cloudinary(mut payload: Multipart) -> Result<Vec<St
             .post(&format!("https://api.cloudinary.com/v1_1/{}/auto/upload", CLOUD_NAME.as_str()))
             .multipart(form)
             .send()
-            .await
-            .map_err(|e| AppError::FileUploadError(e.to_string()))?;
+            .await?; // `reqwest::Error` automatically converts to `AppError::ReqwestError`
 
-        let json: serde_json::Value = resp.json().await.map_err(AppError::SerdeError)?;
+        // Use `resp.json().await?` to automatically convert `reqwest::Error`
+        let json: serde_json::Value = resp.json().await?;
+
         if let Some(u) = json.get("secure_url").and_then(|v| v.as_str()) {
             urls.push(u.to_string());
         } else {
-            return Err(AppError::FileUploadError("Missing secure_url".into()));
+            return Err(AppError::FileUploadError("Cloudinary response missing 'secure_url'.".into()));
         }
     }
 

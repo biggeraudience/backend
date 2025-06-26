@@ -1,3 +1,4 @@
+// src/error.rs
 use actix_web::{http::StatusCode, HttpResponse, ResponseError};
 use serde_json::json;
 use thiserror::Error;
@@ -27,6 +28,12 @@ pub enum AppError {
     MultipartError(#[from] actix_multipart::MultipartError),
     #[error("IO error: {0}")]
     IoError(#[from] std::io::Error),
+    // New error variants
+    #[error("Bcrypt error: {0}")]
+    BcryptError(#[from] bcrypt::BcryptError),
+    #[error("Reqwest error: {0}")]
+    ReqwestError(#[from] reqwest::Error),
+    // Existing generic errors
     #[error("Generic error: {0}")]
     GenericError(String),
     #[error("Internal server error")]
@@ -53,21 +60,37 @@ impl ResponseError for AppError {
                 (StatusCode::UNAUTHORIZED, "Authentication required.".to_string())
             },
             AppError::Forbidden => (StatusCode::FORBIDDEN, "Access denied.".to_string()),
-            AppError::FileUploadError(_) => {
-                error!("File upload error: {:?}", self);
+            AppError::FileUploadError(msg) => { // Updated to log the internal msg
+                error!("File upload error: {}", msg);
                 (StatusCode::INTERNAL_SERVER_ERROR, "File upload failed.".to_string())
             },
-            AppError::SerdeError(_) => {
-                error!("Serialization/Deserialization error: {:?}", self);
+            AppError::SerdeError(e) => { // Updated to log the internal error
+                error!("Serialization/Deserialization error: {:?}", e);
                 (StatusCode::BAD_REQUEST, "Invalid data format.".to_string())
             },
-            AppError::MultipartError(_) => {
-                error!("Multipart error: {:?}", self);
+            AppError::MultipartError(e) => { // Updated to log the internal error
+                error!("Multipart error: {:?}", e);
                 (StatusCode::BAD_REQUEST, "Invalid multipart data.".to_string())
             },
-            AppError::IoError(_) => {
-                error!("IO error: {:?}", self);
+            AppError::IoError(e) => { // Updated to log the internal error
+                error!("IO error: {:?}", e);
                 (StatusCode::INTERNAL_SERVER_ERROR, "An I/O error occurred.".to_string())
+            },
+            // New error matching for BcryptError and ReqwestError
+            AppError::BcryptError(e) => {
+                error!("Bcrypt error: {:?}", e);
+                (StatusCode::INTERNAL_SERVER_ERROR, "Password processing failed.".to_string())
+            },
+            AppError::ReqwestError(e) => {
+                error!("Reqwest error: {:?}", e);
+                // Check for specific reqwest errors if needed for more granular status codes
+                if e.is_timeout() {
+                    (StatusCode::REQUEST_TIMEOUT, "Network request timed out.".to_string())
+                } else if e.is_connect() {
+                    (StatusCode::SERVICE_UNAVAILABLE, "Failed to connect to external service.".to_string())
+                } else {
+                    (StatusCode::INTERNAL_SERVER_ERROR, "External service communication failed.".to_string())
+                }
             },
             AppError::GenericError(msg) => {
                 (StatusCode::INTERNAL_SERVER_ERROR, msg.clone())

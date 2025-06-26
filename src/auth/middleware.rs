@@ -2,7 +2,7 @@ use actix_web::{
     dev::{Service, ServiceRequest, ServiceResponse, Transform, forward_ready},
     Error, HttpMessage, web
 };
-use futures::future::{LocalBoxFuture, Ready, ok};
+use futures_util::future::{ready, Ready, LocalBoxFuture, ok};
 use std::{rc::Rc, task::{Context, Poll}};
 use crate::auth::models::Claims;
 use crate::error::AppError;

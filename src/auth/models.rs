@@ -44,7 +44,7 @@ pub struct Claims {
 
 // Make Claims an Actix extractor
 use actix_web::{FromRequest, dev::Payload, HttpRequest, Error as ActixError};
-use futures::future::{ready, Ready};
+use futures_util::future::{ready, Ready, LocalBoxFuture, ok};
 
 impl FromRequest for Claims {
     type Error = ActixError;
