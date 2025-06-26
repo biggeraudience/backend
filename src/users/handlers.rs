@@ -1,3 +1,4 @@
+// src/users/handlers.rs
 use actix_web::{get, put, web, HttpResponse};
 use sqlx::PgPool;
 use web::Data;
@@ -5,15 +6,15 @@ use uuid::Uuid;
 
 use crate::auth::models::Claims;
 use crate::error::AppError;
-use crate::users::models::{User, UpdateProfilePayload, UpdateUserRolePayload};
+use crate::users::models::{User, UpdateProfilePayload, UpdateUserRolePayload}; // Keep User as it's used as a return type
 
 #[get("/me")]
 pub async fn get_me(
     claims: Claims,
     pool: Data<PgPool>,
 ) -> Result<HttpResponse, AppError> {
-    // Corrected: Specify the return type `User`
-    let user = sqlx::query_as!(
+    // Corrected: Explicitly specify User
+    let user: User = sqlx::query_as!(
         User,
         r#"
         SELECT id, username, email, password_hash, role, created_at, updated_at
@@ -34,8 +35,8 @@ pub async fn update_me(
     pool: Data<PgPool>,
     payload: web::Json<UpdateProfilePayload>,
 ) -> Result<HttpResponse, AppError> {
-    // Corrected: Specify the return type `User`
-    let updated_user = sqlx::query_as!(
+    // Corrected: Explicitly specify User
+    let updated_user: User = sqlx::query_as!(
         User,
         r#"
         UPDATE users
@@ -59,8 +60,8 @@ pub async fn update_me(
 pub async fn list_users(
     pool: Data<PgPool>,
 ) -> Result<HttpResponse, AppError> {
-    // Corrected: Specify the return type `User`
-    let users = sqlx::query_as!(
+    // Corrected: Explicitly specify Vec<User>
+    let users: Vec<User> = sqlx::query_as!(
         User,
         r#"
         SELECT id, username, email, password_hash, role, created_at, updated_at
@@ -80,8 +81,8 @@ pub async fn get_user_by_id(
     pool: Data<PgPool>,
 ) -> Result<HttpResponse, AppError> {
     let user_id = path.into_inner();
-    // Corrected: Specify the return type `User`
-    let user = sqlx::query_as!(
+    // Corrected: Explicitly specify User
+    let user: User = sqlx::query_as!(
         User,
         r#"
         SELECT id, username, email, password_hash, role, created_at, updated_at
@@ -111,8 +112,8 @@ pub async fn update_user_role(
         return Err(AppError::ValidationError("Invalid role specified. Must be 'user' or 'admin'".to_string()));
     }
 
-    // Corrected: Specify the return type `User`
-    let updated_user = sqlx::query_as!(
+    // Corrected: Explicitly specify User
+    let updated_user: User = sqlx::query_as!(
         User,
         r#"
         UPDATE users

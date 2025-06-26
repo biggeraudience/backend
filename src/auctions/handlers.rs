@@ -1,8 +1,9 @@
+// src/auctions/handlers.rs
 use actix_web::{get, post, put, delete, web, HttpResponse};
 use sqlx::PgPool;
 use web::{Data, Json};
 use uuid::Uuid;
-use chrono::Utc;
+use chrono::Utc; // Kept as it's used with Utc::now()
 
 use crate::auth::models::Claims;
 use crate::error::AppError;
@@ -11,8 +12,8 @@ use crate::auctions::models::{Auction, Bid, CreateAuctionPayload, UpdateAuctionP
 // Public Endpoints
 #[get("/")]
 pub async fn get_all_auctions(pool: Data<PgPool>) -> Result<HttpResponse, AppError> {
-    // Corrected: Specify the return type `Auction`
-    let auctions = sqlx::query_as!(
+    // Corrected: Explicitly specify Vec<Auction>
+    let auctions: Vec<Auction> = sqlx::query_as!(
         Auction,
         r#"
         SELECT id, vehicle_id, start_time, end_time, starting_bid, current_highest_bid, highest_bidder_id, status, created_at, updated_at
@@ -33,7 +34,8 @@ pub async fn get_auction_detail(
     pool: Data<PgPool>,
 ) -> Result<HttpResponse, AppError> {
     let auction_id = path.into_inner();
-    let auction = sqlx::query_as!(
+    // Corrected: Explicitly specify Auction
+    let auction: Auction = sqlx::query_as!(
         Auction,
         r#"
         SELECT id, vehicle_id, start_time, end_time, starting_bid, current_highest_bid, highest_bidder_id, status, created_at, updated_at
@@ -62,7 +64,8 @@ pub async fn place_bid(
     // Start a transaction for atomicity
     let mut tx = pool.begin().await?;
 
-    let auction = sqlx::query_as!(
+    // Corrected: Explicitly specify Auction
+    let auction: Auction = sqlx::query_as!(
         Auction,
         r#"
         SELECT id, vehicle_id, start_time, end_time, starting_bid, current_highest_bid, highest_bidder_id, status, created_at, updated_at
@@ -93,10 +96,9 @@ pub async fn place_bid(
         }
     }
 
-
     // Insert new bid
-    // Corrected: Specify the return type `Bid`
-    let new_bid = sqlx::query_as!(
+    // Corrected: Explicitly specify Bid
+    let new_bid: Bid = sqlx::query_as!(
         Bid,
         r#"
         INSERT INTO bids (auction_id, bidder_id, bid_amount, bid_time)
@@ -146,8 +148,8 @@ pub async fn create_auction(
     }
     // TODO: Verify vehicle_id exists and is available for auction
 
-    // Corrected: Specify the return type `Auction`
-    let new_auction = sqlx::query_as!(
+    // Corrected: Explicitly specify Auction
+    let new_auction: Auction = sqlx::query_as!(
         Auction,
         r#"
         INSERT INTO auctions (vehicle_id, start_time, end_time, starting_bid, status)
@@ -181,8 +183,8 @@ pub async fn update_auction(
         }
     }
 
-    // Corrected: Specify the return type `Auction`
-    let updated_auction = sqlx::query_as!(
+    // Corrected: Explicitly specify Auction
+    let updated_auction: Auction = sqlx::query_as!(
         Auction,
         r#"
         UPDATE auctions
@@ -212,11 +214,11 @@ pub async fn delete_auction(
 ) -> Result<HttpResponse, AppError> {
     let auction_id = path.into_inner();
 
-    let deleted = sqlx::query!(
+    // Reverted the previous change as `rows_affected` is typically checked after `execute`
+    let deleted_rows = sqlx::query!(
         r#"
         DELETE FROM auctions
         WHERE id = $1
-        RETURNING id
         "#,
         auction_id
     )
@@ -224,7 +226,7 @@ pub async fn delete_auction(
     .await?
     .rows_affected();
 
-    if deleted == 0 {
+    if deleted_rows == 0 {
         return Err(AppError::NotFound("Auction".to_string()));
     }
 

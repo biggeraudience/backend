@@ -1,8 +1,9 @@
+// src/auth/handlers.rs
 use actix_web::{post, web, HttpResponse};
 use sqlx::PgPool;
 use chrono::Utc;
 use web::Data;
-use uuid::Uuid;
+// Removed: use uuid::Uuid; // Not directly used in this file
 
 use crate::auth::models::{RegisterPayload, LoginPayload, AuthTokenResponse, User, Claims};
 use crate::auth::utils::{hash_password, verify_password, create_jwt};
@@ -20,8 +21,8 @@ pub async fn register(
 
     let hashed_password = hash_password(&payload.password).await?;
 
-    // Corrected: Use positional placeholders ($1, $2, $3) and specify the return type `User`
-    let new_user = sqlx::query_as!(
+    // Corrected: Explicitly specify User
+    let new_user: User = sqlx::query_as!(
         User,
         r#"
         INSERT INTO users (username, email, password_hash, role)
@@ -48,8 +49,8 @@ pub async fn login(
         return Err(AppError::ValidationError("Email and password are required.".to_string()));
     }
 
-    // Corrected: Use a positional placeholder ($1) and specify the return type `User`
-    let user = sqlx::query_as!(
+    // Corrected: Explicitly specify User
+    let user: User = sqlx::query_as!(
         User,
         r#"
         SELECT id, username, email, password_hash, role, created_at, updated_at

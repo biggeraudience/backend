@@ -1,6 +1,8 @@
+// src/error.rs
 use actix_web::{http::StatusCode, HttpResponse, ResponseError};
 use serde_json::json;
 use thiserror::Error;
+use tracing::error; // Ensure tracing::error is available
 
 #[derive(Debug, Error)]
 pub enum AppError {
@@ -34,8 +36,7 @@ pub enum AppError {
 
 impl ResponseError for AppError {
     fn error_response(&self) -> HttpResponse {
-        use tracing::error; // Use tracing for logging errors
-
+        // Use tracing for logging errors
         let (status_code, error_message) = match self {
             AppError::DbError(e) => {
                 error!("Database error: {:?}", e);

@@ -1,21 +1,23 @@
+// src/main.rs
 use actix_web::{web, App, HttpServer, HttpResponse};
 use actix_cors::Cors;
-use sqlx::PgPool;
+// Removed: use sqlx::PgPool; // Not directly used in main.rs functions
+
 use std::env;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 // your modules
-mod db;         // connection.rs
+mod db;         // Assumes src/db/mod.rs exists and contains `pub mod connection;`
 mod error;      // error.rs
 mod auth;       // auth/{handlers,models,utils,middleware}.rs
 mod users;      // users/{handlers,models}.rs
 mod vehicles;   // vehicles/{handlers,models}.rs
 mod auctions;   // auctions/{handlers,models}.rs
 mod inquiries;  // inquiries/{handlers,models}.rs
-mod utils;      // utils/cloudinary.rs
+mod utils;      // Assumes src/utils/mod.rs exists and contains `pub mod cloudinary;`
 
 // bring in the Cloudinary upload handler
-use utils::cloudinary::handle_upload;
+use utils::cloudinary::handle_upload; // Correct import path based on module structure
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
@@ -33,14 +35,15 @@ async fn main() -> std::io::Result<()> {
     let database_url = env::var("DATABASE_URL").expect("DATABASE_URL missing");
     let jwt_secret   = env::var("JWT_SECRET").expect("JWT_SECRET missing");
     let port: u16    = env::var("PORT").unwrap_or_else(|_| "8000".into())
-                          .parse()
-                          .expect("PORT must be a number");
+                            .parse()
+                            .expect("PORT must be a number");
 
     // 3) Connect to Postgres and run migrations
     let pool = db::connection::get_connection_pool(&database_url)
         .await
         .expect("Failed to create DB pool");
 
+    // Retained the original path as per user input, ensure migration file follows `0001_name.sql` format
     sqlx::migrate!("./src/db/migrations")
         .run(&pool)
         .await
@@ -74,7 +77,7 @@ async fn main() -> std::io::Result<()> {
                 HttpResponse::Ok().body("🚀 Manga Autos API up!")
             }))
 
-            //  ─── AUTH ───────────────────────────────────────────────────────────────
+            // ─── AUTH ───────────────────────────────────────────────────────────────
             .service(
                 web::scope("/auth")
                     .service(auth::handlers::register)
@@ -82,7 +85,7 @@ async fn main() -> std::io::Result<()> {
                 // + forgot/reset when ready
             )
 
-            //  ─── VEHICLES ───────────────────────────────────────────────────────────
+            // ─── VEHICLES ───────────────────────────────────────────────────────────
             .service(
                 web::scope("/vehicles")
                     .service(vehicles::handlers::get_all_vehicles)
@@ -101,7 +104,7 @@ async fn main() -> std::io::Result<()> {
                     .route("/upload", web::post().to(handle_upload))
             )
 
-            //  ─── AUCTIONS ──────────────────────────────────────────────────────────
+            // ─── AUCTIONS ──────────────────────────────────────────────────────────
             .service(
                 web::scope("/auctions")
                     .service(auctions::handlers::get_all_auctions)
@@ -122,7 +125,7 @@ async fn main() -> std::io::Result<()> {
                     .service(auctions::handlers::delete_auction)
             )
 
-            //  ─── INQUIRIES ─────────────────────────────────────────────────────────
+            // ─── INQUIRIES ─────────────────────────────────────────────────────────
             .service(
                 web::scope("/inquiries")
                     .service(inquiries::handlers::submit_inquiry)
@@ -136,7 +139,7 @@ async fn main() -> std::io::Result<()> {
                     .service(inquiries::handlers::delete_inquiry)
             )
 
-            //  ─── USERS ─────────────────────────────────────────────────────────────
+            // ─── USERS ─────────────────────────────────────────────────────────────
             .service(
                 web::scope("/users")
                     .wrap(auth::middleware::JwtAuth)

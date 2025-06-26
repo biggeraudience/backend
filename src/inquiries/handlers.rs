@@ -1,8 +1,9 @@
+// src/inquiries/handlers.rs
 use actix_web::{get, post, put, delete, web, HttpResponse};
 use sqlx::PgPool;
 use web::{Data, Json};
 use uuid::Uuid;
-use chrono::Utc;
+// Removed: use chrono::Utc; // Not directly used in this file
 
 use crate::auth::models::Claims; // To get user ID if authenticated
 use crate::error::AppError;
@@ -22,8 +23,8 @@ pub async fn submit_inquiry(
 
     let user_id = claims.map(|c| c.user_id);
 
-    // Corrected: Specify the return type `Inquiry`
-    let new_inquiry = sqlx::query_as!(
+    // Corrected: Explicitly specify Inquiry
+    let new_inquiry: Inquiry = sqlx::query_as!(
         Inquiry,
         r#"
         INSERT INTO inquiries (user_id, name, email, phone, subject, message, status)
@@ -46,8 +47,8 @@ pub async fn submit_inquiry(
 // Admin Endpoints
 #[get("/")]
 pub async fn list_inquiries(pool: Data<PgPool>) -> Result<HttpResponse, AppError> {
-    // Corrected: Specify the return type `Inquiry`
-    let inquiries = sqlx::query_as!(
+    // Corrected: Explicitly specify Vec<Inquiry>
+    let inquiries: Vec<Inquiry> = sqlx::query_as!(
         Inquiry,
         r#"
         SELECT id, user_id, name, email, phone, subject, message, status, created_at, updated_at
@@ -75,8 +76,8 @@ pub async fn update_inquiry_status(
         return Err(AppError::ValidationError("Invalid status. Must be 'new', 'in_progress', 'resolved', or 'closed'".to_string()));
     }
 
-    // Corrected: Specify the return type `Inquiry`
-    let updated_inquiry = sqlx::query_as!(
+    // Corrected: Explicitly specify Inquiry
+    let updated_inquiry: Inquiry = sqlx::query_as!(
         Inquiry,
         r#"
         UPDATE inquiries
@@ -100,11 +101,10 @@ pub async fn delete_inquiry(
 ) -> Result<HttpResponse, AppError> {
     let inquiry_id = path.into_inner();
 
-    let deleted = sqlx::query!(
+    let deleted_rows = sqlx::query!(
         r#"
         DELETE FROM inquiries
         WHERE id = $1
-        RETURNING id
         "#,
         inquiry_id
     )
@@ -112,7 +112,7 @@ pub async fn delete_inquiry(
     .await?
     .rows_affected();
 
-    if deleted == 0 {
+    if deleted_rows == 0 {
         return Err(AppError::NotFound("Inquiry".to_string()));
     }
 
