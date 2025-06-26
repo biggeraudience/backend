@@ -1,27 +1,23 @@
-// src/auth/handlers.rs
 use actix_web::{post, web, HttpResponse};
 use sqlx::PgPool;
 use chrono::Utc;
-use web::Data;
-// Removed: use uuid::Uuid; // Not directly used in this file
-
 use crate::auth::models::{RegisterPayload, LoginPayload, AuthTokenResponse, User, Claims};
 use crate::auth::utils::{hash_password, verify_password, create_jwt};
 use crate::error::AppError;
+use actix_web::web::Data;
 
 #[post("/register")]
 pub async fn register(
     pool: Data<PgPool>,
     payload: web::Json<RegisterPayload>,
 ) -> Result<HttpResponse, AppError> {
-    // Basic validation
     if payload.username.is_empty() || payload.email.is_empty() || payload.password.len() < 8 {
-        return Err(AppError::ValidationError("Username, email, and password (min 8 chars) are required.".to_string()));
+        return Err(AppError::ValidationError(
+            "Username, email, and password (min 8 chars) are required.".to_string(),
+        ));
     }
 
-    let hashed_password = hash_password(&payload.password).await?;
-
-    // Corrected: Explicitly specify User
+    let hashed = hash_password(&payload.password).await?;
     let new_user: User = sqlx::query_as!(
         User,
         r#"
@@ -31,7 +27,7 @@ pub async fn register(
         "#,
         payload.username,
         payload.email,
-        hashed_password
+        hashed
     )
     .fetch_one(pool.get_ref())
     .await?;
@@ -49,7 +45,6 @@ pub async fn login(
         return Err(AppError::ValidationError("Email and password are required.".to_string()));
     }
 
-    // Corrected: Explicitly specify User
     let user: User = sqlx::query_as!(
         User,
         r#"
@@ -67,17 +62,12 @@ pub async fn login(
         return Err(AppError::AuthError("Invalid credentials.".to_string()));
     }
 
-    let expiration = Utc::now()
-        .checked_add_signed(chrono::Duration::days(7)) // Token valid for 7 days
-        .expect("valid timestamp")
+    let exp = Utc::now()
+        .checked_add_signed(chrono::Duration::days(7))
+        .unwrap()
         .timestamp() as usize;
 
-    let claims = Claims {
-        user_id: user.id,
-        role: user.role.clone(),
-        exp: expiration,
-    };
-
+    let claims = Claims { user_id: user.id, role: user.role.clone(), exp };
     let token = create_jwt(claims, jwt_secret.get_ref())?;
 
     Ok(HttpResponse::Ok().json(AuthTokenResponse {

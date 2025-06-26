@@ -1,4 +1,3 @@
-// src/db/connection.rs
 use sqlx::postgres::PgPoolOptions;
 use sqlx::PgPool;
 use tracing::info;

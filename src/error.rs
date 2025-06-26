@@ -1,8 +1,7 @@
-// src/error.rs
 use actix_web::{http::StatusCode, HttpResponse, ResponseError};
 use serde_json::json;
 use thiserror::Error;
-use tracing::error; // Ensure tracing::error is available
+use tracing::error;
 
 #[derive(Debug, Error)]
 pub enum AppError {
@@ -36,7 +35,6 @@ pub enum AppError {
 
 impl ResponseError for AppError {
     fn error_response(&self) -> HttpResponse {
-        // Use tracing for logging errors
         let (status_code, error_message) = match self {
             AppError::DbError(e) => {
                 error!("Database error: {:?}", e);
@@ -46,35 +44,29 @@ impl ResponseError for AppError {
                 error!("JWT error: {:?}", e);
                 (StatusCode::UNAUTHORIZED, "Invalid or expired token.".to_string())
             },
-            AppError::AuthError(msg) => {
-                (StatusCode::BAD_REQUEST, msg.clone())
-            },
-            AppError::ValidationError(msg) => {
-                (StatusCode::BAD_REQUEST, msg.clone())
-            },
+            AppError::AuthError(msg) => (StatusCode::BAD_REQUEST, msg.clone()),
+            AppError::ValidationError(msg) => (StatusCode::BAD_REQUEST, msg.clone()),
             AppError::NotFound(resource) => {
                 (StatusCode::NOT_FOUND, format!("{} not found.", resource))
             },
             AppError::Unauthorized => {
                 (StatusCode::UNAUTHORIZED, "Authentication required.".to_string())
             },
-            AppError::Forbidden => {
-                (StatusCode::FORBIDDEN, "Access denied.".to_string())
-            },
-            AppError::FileUploadError(e) => {
-                error!("File upload error: {:?}", e);
+            AppError::Forbidden => (StatusCode::FORBIDDEN, "Access denied.".to_string()),
+            AppError::FileUploadError(_) => {
+                error!("File upload error: {:?}", self);
                 (StatusCode::INTERNAL_SERVER_ERROR, "File upload failed.".to_string())
             },
-            AppError::SerdeError(e) => {
-                error!("Serialization/Deserialization error: {:?}", e);
+            AppError::SerdeError(_) => {
+                error!("Serialization/Deserialization error: {:?}", self);
                 (StatusCode::BAD_REQUEST, "Invalid data format.".to_string())
             },
-            AppError::MultipartError(e) => {
-                error!("Multipart error: {:?}", e);
+            AppError::MultipartError(_) => {
+                error!("Multipart error: {:?}", self);
                 (StatusCode::BAD_REQUEST, "Invalid multipart data.".to_string())
             },
-            AppError::IoError(e) => {
-                error!("IO error: {:?}", e);
+            AppError::IoError(_) => {
+                error!("IO error: {:?}", self);
                 (StatusCode::INTERNAL_SERVER_ERROR, "An I/O error occurred.".to_string())
             },
             AppError::GenericError(msg) => {
@@ -86,6 +78,6 @@ impl ResponseError for AppError {
         };
 
         HttpResponse::build(status_code)
-            .json(json!({"error": error_message}))
+            .json(json!({ "error": error_message }))
     }
 }

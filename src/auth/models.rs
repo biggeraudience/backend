@@ -8,7 +8,7 @@ pub struct User {
     pub id: Uuid,
     pub username: String,
     pub email: String,
-    #[serde(skip_serializing)] // Don't serialize password hash
+    #[serde(skip_serializing)]
     pub password_hash: String,
     pub role: String,
     pub created_at: DateTime<Utc>,
@@ -35,15 +35,25 @@ pub struct AuthTokenResponse {
     pub role: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Claims {
     pub user_id: Uuid,
     pub role: String,
-    pub exp: usize, // Expiration time (as Unix timestamp)
+    pub exp: usize,
 }
 
-// For updating user role by admin
-#[derive(Debug, Deserialize)]
-pub struct UpdateUserRolePayload {
-    pub role: String,
+// Make Claims an Actix extractor
+use actix_web::{FromRequest, dev::Payload, HttpRequest, Error as ActixError};
+use futures::future::{ready, Ready};
+
+impl FromRequest for Claims {
+    type Error = ActixError;
+    type Future = Ready<Result<Self, Self::Error>>;
+    fn from_request(req: &HttpRequest, _: &mut Payload) -> Self::Future {
+        if let Some(c) = req.extensions().get::<Claims>().cloned() {
+            ready(Ok(c))
+        } else {
+            ready(Err(actix_web::error::ErrorUnauthorized("Missing or invalid JWT")))
+        }
+    }
 }
