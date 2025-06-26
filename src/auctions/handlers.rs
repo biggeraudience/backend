@@ -3,20 +3,23 @@ use actix_web::{get, post, put, delete, web, HttpResponse};
 use sqlx::PgPool;
 use web::{Data, Json};
 use uuid::Uuid;
-use chrono::Utc; // Kept as it's used with Utc::now()
+use chrono::Utc;
 
 use crate::auth::models::Claims;
 use crate::error::AppError;
-use crate::auctions::models::{Auction, Bid, CreateAuctionPayload, UpdateAuctionPayload, PlaceBidPayload};
+use crate::auctions::models::{
+    Auction, Bid, CreateAuctionPayload, UpdateAuctionPayload, PlaceBidPayload,
+};
 
 // Public Endpoints
 #[get("/")]
 pub async fn get_all_auctions(pool: Data<PgPool>) -> Result<HttpResponse, AppError> {
-    // Corrected: Explicitly specify Vec<Auction>
-    let auctions: Vec<Auction> = sqlx::query_as!(
+    let auctions: Vec<Auction> = sqlx::query_as_unchecked!(
         Auction,
         r#"
-        SELECT id, vehicle_id, start_time, end_time, starting_bid, current_highest_bid, highest_bidder_id, status, created_at, updated_at
+        SELECT id, vehicle_id, start_time, end_time, starting_bid,
+               current_highest_bid, highest_bidder_id, status,
+               created_at, updated_at
         FROM auctions
         WHERE status = 'active'
         ORDER BY start_time ASC
@@ -34,11 +37,13 @@ pub async fn get_auction_detail(
     pool: Data<PgPool>,
 ) -> Result<HttpResponse, AppError> {
     let auction_id = path.into_inner();
-    // Corrected: Explicitly specify Auction
-    let auction: Auction = sqlx::query_as!(
+
+    let auction: Auction = sqlx::query_as_unchecked!(
         Auction,
         r#"
-        SELECT id, vehicle_id, start_time, end_time, starting_bid, current_highest_bid, highest_bidder_id, status, created_at, updated_at
+        SELECT id, vehicle_id, start_time, end_time, starting_bid,
+               current_highest_bid, highest_bidder_id, status,
+               created_at, updated_at
         FROM auctions
         WHERE id = $1
         "#,
@@ -54,21 +59,21 @@ pub async fn get_auction_detail(
 #[post("/{auction_id}/bid")]
 pub async fn place_bid(
     path: web::Path<Uuid>,
-    claims: Claims, // Authenticated user
+    claims: Claims,
     pool: Data<PgPool>,
     payload: Json<PlaceBidPayload>,
 ) -> Result<HttpResponse, AppError> {
     let auction_id = path.into_inner();
     let bid_amount = payload.bid_amount;
 
-    // Start a transaction for atomicity
     let mut tx = pool.begin().await?;
 
-    // Corrected: Explicitly specify Auction
-    let auction: Auction = sqlx::query_as!(
+    let auction: Auction = sqlx::query_as_unchecked!(
         Auction,
         r#"
-        SELECT id, vehicle_id, start_time, end_time, starting_bid, current_highest_bid, highest_bidder_id, status, created_at, updated_at
+        SELECT id, vehicle_id, start_time, end_time, starting_bid,
+               current_highest_bid, highest_bidder_id, status,
+               created_at, updated_at
         FROM auctions
         WHERE id = $1 FOR UPDATE
         "#,
@@ -78,27 +83,24 @@ pub async fn place_bid(
     .await?
     .ok_or_else(|| AppError::NotFound("Auction".to_string()))?;
 
-    // Check if auction is active
     if auction.status != "active" || Utc::now() < auction.start_time || Utc::now() > auction.end_time {
-        return Err(AppError::ValidationError("Auction is not active or has ended.".to_string()));
+        return Err(AppError::ValidationError("Auction is not active or has ended.".into()));
     }
 
-    // Check bid amount
-    let min_acceptable_bid = auction.current_highest_bid.unwrap_or(auction.starting_bid);
-    if bid_amount <= min_acceptable_bid {
-        return Err(AppError::ValidationError(format!("Bid must be higher than current highest bid ({:.2}).", min_acceptable_bid)));
+    let min_bid = auction.current_highest_bid.unwrap_or(auction.starting_bid);
+    if bid_amount <= min_bid {
+        return Err(AppError::ValidationError(
+            format!("Bid must be higher than current highest bid ({:.2}).", min_bid),
+        ));
     }
 
-    // Ensure user isn't bidding against themselves if they are the current highest bidder
-    if let Some(highest_bidder_id) = auction.highest_bidder_id {
-        if highest_bidder_id == claims.user_id {
-            return Err(AppError::ValidationError("You are already the highest bidder.".to_string()));
+    if let Some(current) = auction.highest_bidder_id {
+        if current == claims.user_id {
+            return Err(AppError::ValidationError("You are already the highest bidder.".into()));
         }
     }
 
-    // Insert new bid
-    // Corrected: Explicitly specify Bid
-    let new_bid: Bid = sqlx::query_as!(
+    let new_bid: Bid = sqlx::query_as_unchecked!(
         Bid,
         r#"
         INSERT INTO bids (auction_id, bidder_id, bid_amount, bid_time)
@@ -113,8 +115,7 @@ pub async fn place_bid(
     .fetch_one(&mut *tx)
     .await?;
 
-    // Update auction's highest bid
-    sqlx::query!(
+    sqlx::query_unchecked!(
         r#"
         UPDATE auctions
         SET current_highest_bid = $1,
@@ -139,28 +140,27 @@ pub async fn create_auction(
     pool: Data<PgPool>,
     payload: Json<CreateAuctionPayload>,
 ) -> Result<HttpResponse, AppError> {
-    // Basic validation for dates and bids
     if payload.end_time <= payload.start_time {
-        return Err(AppError::ValidationError("End time must be after start time.".to_string()));
+        return Err(AppError::ValidationError("End time must be after start time.".into()));
     }
     if payload.starting_bid <= 0.0 {
-        return Err(AppError::ValidationError("Starting bid must be positive.".to_string()));
+        return Err(AppError::ValidationError("Starting bid must be positive.".into()));
     }
-    // TODO: Verify vehicle_id exists and is available for auction
 
-    // Corrected: Explicitly specify Auction
-    let new_auction: Auction = sqlx::query_as!(
+    let new_auction: Auction = sqlx::query_as_unchecked!(
         Auction,
         r#"
         INSERT INTO auctions (vehicle_id, start_time, end_time, starting_bid, status)
         VALUES ($1, $2, $3, $4, $5)
-        RETURNING id, vehicle_id, start_time, end_time, starting_bid, current_highest_bid, highest_bidder_id, status, created_at, updated_at
+        RETURNING id, vehicle_id, start_time, end_time, starting_bid,
+                  current_highest_bid, highest_bidder_id, status,
+                  created_at, updated_at
         "#,
         payload.vehicle_id,
         payload.start_time,
         payload.end_time,
         payload.starting_bid,
-        payload.status.unwrap_or_else(|| "pending".to_string())
+        payload.status.clone().unwrap_or_else(|| "pending".into()),
     )
     .fetch_one(pool.get_ref())
     .await?;
@@ -176,24 +176,24 @@ pub async fn update_auction(
 ) -> Result<HttpResponse, AppError> {
     let auction_id = path.into_inner();
 
-    // Optional: Add validation for updated times
     if let (Some(start), Some(end)) = (payload.start_time, payload.end_time) {
         if end <= start {
-            return Err(AppError::ValidationError("End time must be after start time.".to_string()));
+            return Err(AppError::ValidationError("End time must be after start time.".into()));
         }
     }
 
-    // Corrected: Explicitly specify Auction
-    let updated_auction: Auction = sqlx::query_as!(
+    let updated: Auction = sqlx::query_as_unchecked!(
         Auction,
         r#"
         UPDATE auctions
         SET start_time = COALESCE($1, start_time),
-            end_time = COALESCE($2, end_time),
+            end_time   = COALESCE($2, end_time),
             starting_bid = COALESCE($3, starting_bid),
-            status = COALESCE($4, status)
+            status     = COALESCE($4, status)
         WHERE id = $5
-        RETURNING id, vehicle_id, start_time, end_time, starting_bid, current_highest_bid, highest_bidder_id, status, created_at, updated_at
+        RETURNING id, vehicle_id, start_time, end_time, starting_bid,
+                  current_highest_bid, highest_bidder_id, status,
+                  created_at, updated_at
         "#,
         payload.start_time,
         payload.end_time,
@@ -204,7 +204,7 @@ pub async fn update_auction(
     .fetch_one(pool.get_ref())
     .await?;
 
-    Ok(HttpResponse::Ok().json(updated_auction))
+    Ok(HttpResponse::Ok().json(updated))
 }
 
 #[delete("/{auction_id}")]
@@ -214,8 +214,7 @@ pub async fn delete_auction(
 ) -> Result<HttpResponse, AppError> {
     let auction_id = path.into_inner();
 
-    // Reverted the previous change as `rows_affected` is typically checked after `execute`
-    let deleted_rows = sqlx::query!(
+    let deleted = sqlx::query_unchecked!(
         r#"
         DELETE FROM auctions
         WHERE id = $1
@@ -226,8 +225,8 @@ pub async fn delete_auction(
     .await?
     .rows_affected();
 
-    if deleted_rows == 0 {
-        return Err(AppError::NotFound("Auction".to_string()));
+    if deleted == 0 {
+        return Err(AppError::NotFound("Auction".into()));
     }
 
     Ok(HttpResponse::NoContent().finish())
