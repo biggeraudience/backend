@@ -1,73 +1,94 @@
-// src/utils/cloudinary.rs
-use actix_multipart::Multipart;
-use actix_web::{Error, HttpResponse, web};
-use futures_util::stream::StreamExt;
-use once_cell::sync::Lazy;
-use reqwest::Client;
-use reqwest::multipart::{Form, Part};
-use sha2::{Digest, Sha1}; // Use Sha1 from the sha2 crate, as per your Cargo.toml
-use hex;
-use std::env;
-use chrono::Utc;
-use crate::error::AppError;
+use actix_web::{http::StatusCode, HttpResponse, ResponseError};
+use serde_json::json;
+use thiserror::Error;
+use tracing::error;
 
-static CLOUD_NAME: Lazy<String> = Lazy::new(|| env::var("CLOUDINARY_CLOUD_NAME").unwrap());
-static API_KEY:    Lazy<String> = Lazy::new(|| env::var("CLOUDINARY_API_KEY").unwrap());
-static API_SECRET: Lazy<String> = Lazy::new(|| env::var("CLOUDINARY_API_SECRET").unwrap());
-
-pub async fn upload_files_to_cloudinary(mut payload: Multipart) -> Result<Vec<String>, AppError> {
-    let mut urls = Vec::new();
-
-    while let Some(field) = payload.next().await {
-        let mut f = field.map_err(AppError::MultipartError)?;
-        let filename = f.content_disposition().and_then(|cd| cd.get_filename()).unwrap_or("file");
-        let mut buf = web::BytesMut::new();
-        while let Some(chunk) = f.next().await {
-            buf.extend_from_slice(&chunk.map_err(AppError::MultipartError)?);
-        }
-
-        let ts = Utc::now().timestamp();
-        let to_sign = format!("timestamp={}", ts);
-        let mut hasher = Sha1::new();
-        hasher.update(format!("{}{}", to_sign, API_SECRET.as_str()));
-        let sig = hex::encode(hasher.finalize());
-
-        let part = Part::bytes(buf.to_vec())
-            .file_name(filename.to_string())
-            .mime_str("application/octet-stream")
-            // The `mime_str` error type doesn't have a `#[from]` impl for AppError,
-            // so we map it to a generic error for now.
-            .map_err(|e| AppError::GenericError(format!("Invalid MIME type string: {}", e)))?;
-
-        let form = Form::new()
-            .text("api_key", API_KEY.clone())
-            .text("timestamp", ts.to_string())
-            .text("signature", sig)
-            .part("file", part);
-
-        let client = Client::new();
-        let resp = client
-            .post(&format!("https://api.cloudinary.com/v1_1/{}/auto/upload", CLOUD_NAME.as_str()))
-            .multipart(form)
-            .send()
-            .await?; // `reqwest::Error` automatically converts to `AppError::ReqwestError`
-
-        // Use `resp.json().await?` to automatically convert `reqwest::Error`
-        let json: serde_json::Value = resp.json().await?;
-
-        if let Some(u) = json.get("secure_url").and_then(|v| v.as_str()) {
-            urls.push(u.to_string());
-        } else {
-            return Err(AppError::FileUploadError("Cloudinary response missing 'secure_url'.".into()));
-        }
-    }
-
-    Ok(urls)
+#[derive(Debug, Error)]
+pub enum AppError {
+    #[error("Database error: {0}")]
+    DbError(#[from] sqlx::Error),
+    #[error("JWT error: {0}")]
+    JwtError(#[from] jsonwebtoken::errors::Error),
+    #[error("Auth error: {0}")]
+    AuthError(String),
+    #[error("Validation error: {0}")]
+    ValidationError(String),
+    #[error("Resource not found: {0}")]
+    NotFound(String),
+    #[error("Unauthorized")]
+    Unauthorized,
+    #[error("Forbidden")]
+    Forbidden,
+    #[error("File upload error: {0}")]
+    FileUploadError(String),
+    #[error("Serialization/Deserialization error: {0}")]
+    SerdeError(#[from] serde_json::Error),
+    #[error("Multipart error: {0}")]
+    MultipartError(#[from] actix_multipart::MultipartError),
+    #[error("IO error: {0}")]
+    IoError(#[from] std::io::Error),
+    #[error("Bcrypt error: {0}")]
+    BcryptError(#[from] bcrypt::BcryptError),
+    #[error("Reqwest error: {0}")]
+    ReqwestError(#[from] reqwest::Error),
+    #[error("Generic error: {0}")]
+    GenericError(String),
+    #[error("Internal server error")]
+    InternalServerError,
 }
 
-pub async fn handle_upload(payload: Multipart) -> Result<HttpResponse, Error> {
-    match upload_files_to_cloudinary(payload).await {
-        Ok(urls) => Ok(HttpResponse::Ok().json(serde_json::json!({ "urls": urls }))),
-        Err(e) => Err(Error::from(e)),
+impl ResponseError for AppError {
+    fn error_response(&self) -> HttpResponse {
+        let (status, msg) = match self {
+            AppError::DbError(e) => {
+                error!("DB error: {:?}", e);
+                (StatusCode::INTERNAL_SERVER_ERROR, "A database error occurred.")
+            }
+            AppError::JwtError(e) => {
+                error!("JWT error: {:?}", e);
+                (StatusCode::UNAUTHORIZED, "Invalid or expired token.")
+            }
+            AppError::AuthError(m)       => (StatusCode::BAD_REQUEST, m.as_str()),
+            AppError::ValidationError(m) => (StatusCode::BAD_REQUEST, m.as_str()),
+            AppError::NotFound(r)        => (StatusCode::NOT_FOUND, &format!("{} not found.", r)),
+            AppError::Unauthorized       => (StatusCode::UNAUTHORIZED, "Authentication required."),
+            AppError::Forbidden          => (StatusCode::FORBIDDEN, "Access denied."),
+            AppError::FileUploadError(_) => {
+                error!("File upload failed: {:?}", self);
+                (StatusCode::INTERNAL_SERVER_ERROR, "File upload failed.")
+            }
+            AppError::SerdeError(e)  => {
+                error!("Serde error: {:?}", e);
+                (StatusCode::BAD_REQUEST, "Invalid data format.")
+            }
+            AppError::MultipartError(e) => {
+                error!("Multipart error: {:?}", e);
+                (StatusCode::BAD_REQUEST, "Invalid multipart data.")
+            }
+            AppError::IoError(e) => {
+                error!("IO error: {:?}", e);
+                (StatusCode::INTERNAL_SERVER_ERROR, "An I/O error occurred.")
+            }
+            AppError::BcryptError(e) => {
+                error!("Bcrypt error: {:?}", e);
+                (StatusCode::INTERNAL_SERVER_ERROR, "Password processing failed.")
+            }
+            AppError::ReqwestError(e) => {
+                error!("Reqwest error: {:?}", e);
+                if e.is_timeout() {
+                    (StatusCode::REQUEST_TIMEOUT, "Network request timed out.")
+                } else if e.is_connect() {
+                    (StatusCode::SERVICE_UNAVAILABLE, "Failed to connect to external service.")
+                } else {
+                    (StatusCode::INTERNAL_SERVER_ERROR, "External service communication failed.")
+                }
+            }
+            AppError::GenericError(m) => (StatusCode::INTERNAL_SERVER_ERROR, m.as_str()),
+            AppError::InternalServerError => {
+                (StatusCode::INTERNAL_SERVER_ERROR, "An unexpected error occurred.")
+            }
+        };
+
+        HttpResponse::build(status).json(json!({ "error": msg }))
     }
 }

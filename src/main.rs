@@ -2,19 +2,23 @@ use actix_web::{web, App, HttpServer, HttpResponse};
 use actix_cors::Cors;
 use std::env;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
-mod db;         // src/db/connection.rs
-mod error;      // src/error.rs
-mod auth;       // src/auth/{handlers,models,utils,middleware}.rs
-mod users;      // src/users/{handlers,models}.rs
-mod vehicles;   // src/vehicles/{handlers,models,utils}.rs
-mod auctions;   // src/auctions/{handlers,models}.rs
-mod inquiries;  // src/inquiries/{handlers,models}.rs
-mod utils;      // src/utils/cloudinary.rs
 
-use crate::utils::cloudinary::handle_upload;
+mod db;
+mod error;
+mod auth;
+mod users;
+mod vehicles;
+mod auctions;
+mod inquiries;
+mod utils;
+
+use utils::cloudinary::handle_upload;
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
+    // enable offline SQLx (skip compile-time checks)
+    std::env::set_var("SQLX_OFFLINE", "true");
+
     tracing_subscriber::registry()
         .with(tracing_subscriber::EnvFilter::new(
             env::var("RUST_LOG").unwrap_or_else(|_| "info,backend=debug,sqlx=info".into()),
@@ -54,12 +58,17 @@ async fn main() -> std::io::Result<()> {
             .wrap(actix_web::middleware::Logger::default())
             .app_data(web::Data::new(pool.clone()))
             .app_data(web::Data::new(jwt_secret.clone()))
+
             .route("/", web::get().to(|| async { HttpResponse::Ok().body("🚀 Manga Autos API up!") }))
+
+            // AUTH
             .service(
                 web::scope("/auth")
                     .service(auth::handlers::register)
                     .service(auth::handlers::login)
             )
+
+            // VEHICLES
             .service(
                 web::scope("/vehicles")
                     .service(vehicles::handlers::get_all_vehicles)
@@ -75,6 +84,8 @@ async fn main() -> std::io::Result<()> {
                     .service(vehicles::handlers::delete_vehicle)
                     .route("/upload", web::post().to(handle_upload))
             )
+
+            // AUCTIONS
             .service(
                 web::scope("/auctions")
                     .service(auctions::handlers::get_all_auctions)
@@ -90,10 +101,9 @@ async fn main() -> std::io::Result<()> {
                     .service(auctions::handlers::update_auction)
                     .service(auctions::handlers::delete_auction)
             )
-            .service(
-                web::scope("/inquiries")
-                    .service(inquiries::handlers::submit_inquiry)
-            )
+
+            // INQUIRIES
+            .service(web::scope("/inquiries").service(inquiries::handlers::submit_inquiry))
             .service(
                 web::scope("/admin/inquiries")
                     .wrap(auth::middleware::JwtAuth)
@@ -102,6 +112,8 @@ async fn main() -> std::io::Result<()> {
                     .service(inquiries::handlers::update_inquiry_status)
                     .service(inquiries::handlers::delete_inquiry)
             )
+
+            // USERS
             .service(
                 web::scope("/users")
                     .wrap(auth::middleware::JwtAuth)
@@ -116,6 +128,7 @@ async fn main() -> std::io::Result<()> {
                     .service(users::handlers::get_user_by_id)
                     .service(users::handlers::update_user_role)
             )
+
             .default_service(web::to(|| async { HttpResponse::NotFound().body("404 Not Found") }))
     })
     .bind(bind)?

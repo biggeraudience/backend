@@ -43,12 +43,13 @@ pub struct Claims {
 }
 
 // Make Claims an Actix extractor
-use actix_web::{FromRequest, dev::Payload, HttpRequest, Error as ActixError};
-use futures_util::future::{ready, Ready, LocalBoxFuture, ok};
+use actix_web::{FromRequest, dev::Payload, HttpRequest, HttpMessage, Error as ActixError};
+use futures_util::future::{ready, Ready};
 
 impl FromRequest for Claims {
     type Error = ActixError;
     type Future = Ready<Result<Self, Self::Error>>;
+
     fn from_request(req: &HttpRequest, _: &mut Payload) -> Self::Future {
         if let Some(c) = req.extensions().get::<Claims>().cloned() {
             ready(Ok(c))
