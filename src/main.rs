@@ -16,11 +16,10 @@ use utils::cloudinary::handle_upload;
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
-    // Enable SQLx offline mode so that `query_as_unchecked!` macros
-    // don’t try to connect at compile time.
+  
     std::env::set_var("SQLX_OFFLINE", "true");
 
-    // Initialize tracing / structured logging
+   
     tracing_subscriber::registry()
         .with(
             tracing_subscriber::EnvFilter::new(
@@ -147,7 +146,7 @@ async fn main() -> std::io::Result<()> {
                     .service(users::handlers::update_user_role),
             )
 
-            // catch-all 404
+            // catch 404
             .default_service(web::to(|| async {
                 HttpResponse::NotFound().body("404 Not Found")
             }))
