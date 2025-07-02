@@ -1,3 +1,4 @@
+/// src/inquiries/models.rs
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use time::OffsetDateTime;
@@ -5,30 +6,14 @@ use sqlx::FromRow;
 
 #[derive(Debug, Serialize, Deserialize, FromRow)]
 pub struct Inquiry {
-    pub id: Uuid,
-    pub user_id: Option<Uuid>, // Matches `ON DELETE SET NULL` in DB
-    pub name: String,
-    pub email: String,
-    pub phone: Option<String>, // Matches nullable `phone TEXT` in DB
-    pub subject: Option<String>, // Added: Matches nullable `subject TEXT` in DB
-    pub message: String,
-    pub status: String,
-    pub created_at: OffsetDateTime,
-    pub updated_at: OffsetDateTime,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct CreateInquiryPayload {
-    // user_id is now Option<Uuid> as per the Inquiry struct
-    pub user_id: Option<Uuid>,
-    pub name: String,
-    pub email: String,
-    pub phone: Option<String>,
-    pub subject: Option<String>, // Added
-    pub message: String,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct UpdateInquiryStatusPayload {
-    pub status: String,
+    pub id:         Uuid,
+    pub user_id:    Option<Uuid>,    // UUID NULLABLE
+    pub name:       String,          // TEXT NOT NULL
+    pub email:      String,          // TEXT NOT NULL
+    pub phone:      Option<String>,  // TEXT NULLABLE
+    pub subject:    Option<String>,  // TEXT NULLABLE
+    pub message:    String,          // TEXT NOT NULL
+    pub status:     String,          // TEXT NOT NULL
+    pub created_at: OffsetDateTime,  // TIMESTAMPTZ NOT NULL
+    pub updated_at: OffsetDateTime,  // TIMESTAMPTZ NOT NULL
 }

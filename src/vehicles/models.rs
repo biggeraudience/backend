@@ -1,64 +1,29 @@
+/// src/vehicles/models.rs
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use time::OffsetDateTime;
 use sqlx::FromRow;
 
-#[derive(Debug, Serialize, FromRow)]
+#[derive(Debug, Serialize, Deserialize, FromRow)]
 pub struct Vehicle {
-    pub id: Uuid,
-    pub make: String,
-    pub model: String,
-    pub year: i32,
-    pub price: f64,
-    pub mileage: i32,
-    pub exterior_color: String,
-    pub interior_color: String,
-    pub engine: String,
-    pub transmission: String,
-    pub fuel_type: String,
-    pub image_urls: Vec<String>, // Assuming NOT NULL, if nullable, change to Option<Vec<String>>
-    pub features: Vec<String>,   // Assuming NOT NULL, if nullable, change to Option<Vec<String>>
-    pub description: Option<String>, // Description is usually optional
-    pub status: String,
-    pub is_featured: bool,
-    pub created_at: OffsetDateTime,
-    pub updated_at: OffsetDateTime,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct CreateVehiclePayload {
-    pub make: String,
-    pub model: String,
-    pub year: i32,
-    pub price: f64,
-    pub mileage: i32,
-    pub exterior_color: String,
-    pub interior_color: String,
-    pub engine: String,
-    pub transmission: String,
-    pub fuel_type: String,
-    pub image_urls: Option<Vec<String>>, // Made Option for flexibility in creation
-    pub features: Option<Vec<String>>,   // Made Option for flexibility in creation
-    pub description: Option<String>,
-    pub status: Option<String>,
-    pub is_featured: Option<bool>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct UpdateVehiclePayload {
-    pub make: Option<String>,
-    pub model: Option<String>,
-    pub year: Option<i32>,
-    pub price: Option<f64>,
-    pub mileage: Option<i32>,
-    pub exterior_color: Option<String>,
-    pub interior_color: Option<String>,
-    pub engine: Option<String>,
-    pub transmission: Option<String>,
-    pub fuel_type: Option<String>,
-    pub image_urls: Option<Vec<String>>,
-    pub features: Option<Vec<String>>,
-    pub description: Option<String>,
-    pub status: Option<String>,
-    pub is_featured: Option<bool>,
+    pub id:             Uuid,
+    pub make:           String,
+    pub model:          String,
+    pub year:           i32,
+    pub price:          f64,              // DOUBLE PRECISION
+    pub mileage:        Option<i32>,      // INT NULLABLE
+    pub exterior_color: Option<String>,   // TEXT NULLABLE
+    pub interior_color: Option<String>,   // TEXT NULLABLE
+    pub engine:         Option<String>,   // TEXT NULLABLE
+    pub transmission:   Option<String>,   // TEXT NULLABLE
+    pub fuel_type:      Option<String>,   // TEXT NULLABLE
+    #[sqlx(array)]
+    pub image_urls:     Option<Vec<String>>, // TEXT[] NULLABLE
+    #[sqlx(array)]
+    pub features:       Option<Vec<String>>, // TEXT[] NULLABLE
+    pub description:    Option<String>,      // TEXT NULLABLE
+    pub status:         String,             // DEFAULT 'available', NOT NULL
+    pub is_featured:    bool,               // DEFAULT false, NOT NULL
+    pub created_at:     OffsetDateTime,     // TIMESTAMPTZ NOT NULL
+    pub updated_at:     OffsetDateTime,     // TIMESTAMPTZ NOT NULL
 }

@@ -1,12 +1,13 @@
 // src/users/models.rs
-use serde::{Deserialize, Serialize};
-use uuid::Uuid;
-use time::OffsetDateTime; // Changed from chrono::{DateTime, Utc}
-use sqlx::FromRow;
 
-// Can reuse auth::models::User if no additional fields are needed,
-// but separated for clarity and potential future divergence.
-#[derive(Debug, Serialize, FromRow)]
+use serde::{Deserialize, Serialize};
+use sqlx::FromRow;
+use time::OffsetDateTime;
+use uuid::Uuid;
+
+/// A user record.  
+/// Note: we derive `Deserialize` as well, which can be handy for testing or logging.
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct User {
     pub id: Uuid,
     pub username: String,
@@ -14,18 +15,19 @@ pub struct User {
     #[serde(skip_serializing)]
     pub password_hash: String,
     pub role: String,
-    pub created_at: OffsetDateTime, // Changed to OffsetDateTime
-    pub updated_at: OffsetDateTime, // Changed to OffsetDateTime
+    pub created_at: OffsetDateTime,
+    pub updated_at: OffsetDateTime,
 }
 
+/// Payload for a user to update their own profile.
 #[derive(Debug, Deserialize)]
 pub struct UpdateProfilePayload {
     pub username: Option<String>,
     pub email: Option<String>,
-    // Add other profile fields if needed
+    // Add other optional profile fields here as needed
 }
 
-// For updating user role by admin
+/// Payload for an admin to update another user's role.
 #[derive(Debug, Deserialize)]
 pub struct UpdateUserRolePayload {
     pub role: String,
