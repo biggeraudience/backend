@@ -1,18 +1,14 @@
 // src/auctions/handlers.rs
 use actix_web::{web, HttpResponse, post, put, delete, get};
 use sqlx::{PgPool, Postgres, FromRow};
-// Removed Serialize/Deserialize from here as they are now on the models/payloads directly
 use uuid::Uuid;
 use time::OffsetDateTime;
-use bigdecimal::BigDecimal; // Keep this import for comparisons/logic
+// Change this line:
+use sqlx_types_bigdecimal::BigDecimal; // Use the BigDecimal from sqlx-types-bigdecimal
 
 use crate::error::AppError;
 use crate::auctions::models::{Auction, Bid}; // Import Auction and Bid from models
 use crate::auctions::payloads::{CreateAuctionPayload, UpdateAuctionPayload, CreateBidPayload}; // Import payloads from payloads.rs
-
-// --- NOTE: Struct Definitions (Auction, Bid) are now in src/auctions/models.rs ---
-// --- NOTE: Payload Definitions (CreateAuctionPayload, etc.) are now in src/auctions/payloads.rs ---
-
 
 // --- Handler Functions ---
 
@@ -22,6 +18,9 @@ pub async fn create_bid(
     pool: web::Data<PgPool>,
     payload: web::Json<CreateBidPayload>,
 ) -> Result<HttpResponse, AppError> {
+    // Validate the payload using the `validator` crate
+    payload.validate()?;
+
     // --- START: Added Pre-DB Bid Validation ---
     // Fetch the current auction details to validate the bid
     let auction_details = sqlx::query_as!(
@@ -99,19 +98,10 @@ pub async fn create_auction(
     pool: web::Data<PgPool>,
     payload: web::Json<CreateAuctionPayload>,
 ) -> Result<HttpResponse, AppError> {
+    // Validate the payload using the `validator` crate
+    payload.validate()?;
+
     let now = OffsetDateTime::now_utc();
-
-    // Basic validation: ensure start_time is in the future and end_time is after start_time
-    if payload.start_time <= now {
-        return Err(AppError::ValidationError("Auction start time must be in the future.".into()));
-    }
-    if payload.end_time <= payload.start_time {
-        return Err(AppError::ValidationError("Auction end time must be after the start time.".into()));
-    }
-    if payload.starting_bid <= BigDecimal::from(0) { // Assuming starting bid must be positive
-        return Err(AppError::ValidationError("Starting bid must be a positive value.".into()));
-    }
-
 
     let new_auction = sqlx::query_as!(
         Auction,
@@ -135,45 +125,53 @@ pub async fn create_auction(
 }
 
 /// Handles updating an existing auction.
+// Simplified to a fixed query_as! call as requested
 #[put("/auctions/{id}")]
 pub async fn update_auction(
     path: web::Path<Uuid>,
     pool: web::Data<PgPool>,
     payload: web::Json<UpdateAuctionPayload>,
 ) -> Result<HttpResponse, AppError> {
+    // Validate the payload using the `validator` crate
+    payload.validate()?;
+
     let id = path.into_inner();
     let now = OffsetDateTime::now_utc();
 
-    let mut query_builder: sqlx::QueryBuilder<Postgres> =
-        sqlx::QueryBuilder::new("UPDATE auctions SET updated_at = ");
-    query_builder.push_bind(now);
+    // Fetch existing auction details to apply partial updates or validation
+    let mut existing_auction = sqlx::query_as!(
+        Auction,
+        r#"SELECT id, vehicle_id, start_time, end_time, starting_bid, current_highest_bid, highest_bidder_id, status, created_at, updated_at FROM auctions WHERE id = $1"#,
+        id
+    )
+    .fetch_optional(&**pool)
+    .await?
+    .ok_or_else(|| AppError::NotFound(format!("Auction with id {} not found", id)))?;
 
-    if let Some(current_highest_bid) = payload.current_highest_bid {
-        query_builder.push(", current_highest_bid = ");
-        query_builder.push_bind(current_highest_bid);
-    }
-    if let Some(highest_bidder_id) = payload.highest_bidder_id {
-        query_builder.push(", highest_bidder_id = ");
-        query_builder.push_bind(highest_bidder_id);
-    }
-    if let Some(status) = payload.status.clone() {
-        // Basic validation for status
-        if !["active", "completed", "cancelled"].contains(&status.as_str()) {
-             return Err(AppError::ValidationError("Invalid auction status. Must be 'active', 'completed', or 'cancelled'".to_string()));
-        }
-        query_builder.push(", status = ");
-        query_builder.push_bind(status);
-    }
+    // Apply updates from payload, falling back to existing values if not provided
+    existing_auction.current_highest_bid = payload.current_highest_bid.or(existing_auction.current_highest_bid);
+    existing_auction.highest_bidder_id = payload.highest_bidder_id.or(existing_auction.highest_bidder_id);
+    existing_auction.status = payload.status.unwrap_or(existing_auction.status);
 
-    query_builder.push(" WHERE id = ");
-    query_builder.push_bind(id);
-    query_builder.push(" RETURNING id, vehicle_id, start_time, end_time, starting_bid, current_highest_bid, highest_bidder_id, status, created_at, updated_at");
-
-
-    let updated_auction = query_builder
-        .build_query_as::<Auction>()
-        .fetch_one(&**pool)
-        .await?;
+    let updated_auction = sqlx::query_as!(
+        Auction,
+        r#"
+        UPDATE auctions
+        SET current_highest_bid = $1,
+            highest_bidder_id = $2,
+            status = $3,
+            updated_at = $4
+        WHERE id = $5
+        RETURNING id, vehicle_id, start_time, end_time, starting_bid, current_highest_bid, highest_bidder_id, status, created_at, updated_at
+        "#,
+        existing_auction.current_highest_bid,
+        existing_auction.highest_bidder_id,
+        existing_auction.status,
+        now,
+        id
+    )
+    .fetch_one(&**pool)
+    .await?;
 
     Ok(HttpResponse::Ok().json(updated_auction))
 }

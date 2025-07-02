@@ -4,7 +4,8 @@ use sqlx::{PgPool, Postgres};
 use sqlx::QueryBuilder;
 use uuid::Uuid;
 use time::OffsetDateTime;
-use bigdecimal::BigDecimal; // Keep this import for comparisons/logic (e.g. price validation)
+// Change this line:
+use sqlx_types_bigdecimal::BigDecimal; // Use the BigDecimal from sqlx-types-bigdecimal
 
 use crate::error::AppError;
 use crate::vehicles::models::Vehicle; // Import Vehicle from models
@@ -17,16 +18,13 @@ pub async fn create_vehicle(
     pool: web::Data<PgPool>,
     payload: web::Json<CreateVehiclePayload>,
 ) -> Result<HttpResponse, AppError> {
+    // Validate the payload using the `validator` crate
+    payload.validate()?;
+
     let now = OffsetDateTime::now_utc();
     // Default values if not provided in payload (can also be handled via Default trait on payload)
     let status = payload.status.as_deref().unwrap_or("available");
     let is_featured = payload.is_featured.unwrap_or(false);
-
-    // Basic validation for price
-    if payload.price <= BigDecimal::from(0) { // Assuming price must be positive
-        return Err(AppError::ValidationError("Price must be a positive value.".into()));
-    }
-    // You might also want to validate `year` (e.g., not in the future) etc.
 
     let new_vehicle = sqlx::query_as!(
         Vehicle,
@@ -56,11 +54,9 @@ pub async fn create_vehicle(
         &payload.engine,
         &payload.transmission,
         &payload.fuel_type,
-        // Ensure that image_urls and features are correctly handled as Vec<String>
-        // and that your payload provides them as such. If payload uses Option<Vec<String>>
-        // and you expect non-nullable in DB, you'd need `.unwrap_or_default()` or similar.
-        payload.image_urls.as_ref().unwrap_or(&vec![]),
-        payload.features.as_ref().unwrap_or(&vec![]),
+        payload.image_urls.as_ref().unwrap_or(&vec![]), // Handles Option<Vec<String>>
+        payload.features.as_ref().unwrap_or(&vec![]),   // Handles Option<Vec<String>>
+        &payload.description, // FIXED: Missing description binding ($13 for SQL, was missing here)
         status,
         is_featured,
         now,
@@ -79,6 +75,9 @@ pub async fn update_vehicle(
     pool: web::Data<PgPool>,
     payload: web::Json<UpdateVehiclePayload>,
 ) -> Result<HttpResponse, AppError> {
+    // Validate the payload using the `validator` crate
+    payload.validate()?;
+
     let id = path.into_inner();
     let now = OffsetDateTime::now_utc();
 
@@ -97,15 +96,11 @@ pub async fn update_vehicle(
         qb.push(", year = ").push_bind(year);
     }
     if let Some(price) = payload.price {
-        if price <= BigDecimal::from(0) { // Price update validation
-            return Err(AppError::ValidationError("Updated price must be a positive value.".into()));
-        }
+        // Price validation is now handled by `validator` crate on the payload
         qb.push(", price = ").push_bind(price);
     }
     if let Some(mileage) = payload.mileage {
-        if mileage < 0 { // Mileage validation
-            return Err(AppError::ValidationError("Mileage cannot be negative.".into()));
-        }
+        // Mileage validation is now handled by `validator` crate on the payload
         qb.push(", mileage = ").push_bind(mileage);
     }
     if let Some(color) = &payload.exterior_color {
@@ -133,10 +128,7 @@ pub async fn update_vehicle(
         qb.push(", description = ").push_bind(desc);
     }
     if let Some(status) = &payload.status {
-        // Basic validation for status (e.g., restrict to allowed values)
-        if !["available", "sold", "reserved", "maintenance"].contains(&status.as_str()) {
-             return Err(AppError::ValidationError("Invalid vehicle status. Must be 'available', 'sold', 'reserved', or 'maintenance'".to_string()));
-        }
+        // Status validation is now handled by `validator` crate on the payload
         qb.push(", status = ").push_bind(status);
     }
     if let Some(feat) = payload.is_featured {

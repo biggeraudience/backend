@@ -3,7 +3,8 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use time::OffsetDateTime;
 use sqlx::FromRow;
-use bigdecimal::BigDecimal;
+// Change this line:
+use sqlx_types_bigdecimal::BigDecimal; // Use the BigDecimal from sqlx-types-bigdecimal
 
 #[derive(Debug, Serialize, Deserialize, FromRow)]
 pub struct Auction {

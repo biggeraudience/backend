@@ -3,7 +3,8 @@ use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use time::OffsetDateTime;
 use uuid::Uuid;
-use bigdecimal::BigDecimal;
+// Change this line:
+use sqlx_types_bigdecimal::BigDecimal; // Use the BigDecimal from sqlx-types-bigdecimal
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct Vehicle {
