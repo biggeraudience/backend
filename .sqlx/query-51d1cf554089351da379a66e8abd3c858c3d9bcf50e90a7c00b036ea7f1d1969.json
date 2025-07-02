@@ -1,0 +1,124 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT\n            id, make, model, year, price, mileage, exterior_color, interior_color,\n            engine, transmission, fuel_type, image_urls, features, description,\n            status, is_featured, created_at, updated_at\n        FROM vehicles\n        WHERE id = $1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "make",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "model",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "year",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 4,
+        "name": "price",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 5,
+        "name": "mileage",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 6,
+        "name": "exterior_color",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "interior_color",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 8,
+        "name": "engine",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 9,
+        "name": "transmission",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 10,
+        "name": "fuel_type",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 11,
+        "name": "image_urls",
+        "type_info": "TextArray"
+      },
+      {
+        "ordinal": 12,
+        "name": "features",
+        "type_info": "TextArray"
+      },
+      {
+        "ordinal": 13,
+        "name": "description",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 14,
+        "name": "status",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 15,
+        "name": "is_featured",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 16,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 17,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "51d1cf554089351da379a66e8abd3c858c3d9bcf50e90a7c00b036ea7f1d1969"
+}
