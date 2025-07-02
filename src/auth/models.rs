@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
-use chrono::{DateTime, Utc};
+use time::OffsetDateTime; // Changed from chrono::{DateTime, Utc}
 use sqlx::FromRow;
 
 #[derive(Debug, Serialize, FromRow)]
@@ -11,8 +11,8 @@ pub struct User {
     #[serde(skip_serializing)]
     pub password_hash: String,
     pub role: String,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
+    pub created_at: OffsetDateTime, // Changed to OffsetDateTime
+    pub updated_at: OffsetDateTime, // Changed to OffsetDateTime
 }
 
 #[derive(Debug, Deserialize)]
@@ -39,7 +39,7 @@ pub struct AuthTokenResponse {
 pub struct Claims {
     pub user_id: Uuid,
     pub role: String,
-    pub exp: usize,
+    pub exp: usize, // This remains usize as typically expected by jsonwebtoken
 }
 
 // Make Claims an Actix extractor

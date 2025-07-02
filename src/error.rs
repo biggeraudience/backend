@@ -39,53 +39,54 @@ pub enum AppError {
 
 impl ResponseError for AppError {
     fn error_response(&self) -> HttpResponse {
-        let (status, msg) = match self {
+        // Now msg is always an owned String
+        let (status, msg): (StatusCode, String) = match self {
             AppError::DbError(e) => {
                 error!("DB error: {:?}", e);
-                (StatusCode::INTERNAL_SERVER_ERROR, "A database error occurred.")
+                (StatusCode::INTERNAL_SERVER_ERROR, "A database error occurred.".into())
             }
             AppError::JwtError(e) => {
                 error!("JWT error: {:?}", e);
-                (StatusCode::UNAUTHORIZED, "Invalid or expired token.")
+                (StatusCode::UNAUTHORIZED, "Invalid or expired token.".into())
             }
-            AppError::AuthError(m)       => (StatusCode::BAD_REQUEST, m.as_str()),
-            AppError::ValidationError(m) => (StatusCode::BAD_REQUEST, m.as_str()),
-            AppError::NotFound(r)        => (StatusCode::NOT_FOUND, &format!("{} not found.", r)),
-            AppError::Unauthorized       => (StatusCode::UNAUTHORIZED, "Authentication required."),
-            AppError::Forbidden          => (StatusCode::FORBIDDEN, "Access denied."),
-            AppError::FileUploadError(_) => {
-                error!("File upload failed: {:?}", self);
-                (StatusCode::INTERNAL_SERVER_ERROR, "File upload failed.")
+            AppError::AuthError(m) => (StatusCode::BAD_REQUEST, m.clone()),
+            AppError::ValidationError(m) => (StatusCode::BAD_REQUEST, m.clone()),
+            AppError::NotFound(r) => (StatusCode::NOT_FOUND, format!("{} not found.", r)),
+            AppError::Unauthorized => (StatusCode::UNAUTHORIZED, "Authentication required.".into()),
+            AppError::Forbidden => (StatusCode::FORBIDDEN, "Access denied.".into()),
+            AppError::FileUploadError(e) => {
+                error!("File upload failed: {:?}", e);
+                (StatusCode::INTERNAL_SERVER_ERROR, format!("File upload failed: {}", e))
             }
-            AppError::SerdeError(e)  => {
+            AppError::SerdeError(e) => {
                 error!("Serde error: {:?}", e);
-                (StatusCode::BAD_REQUEST, "Invalid data format.")
+                (StatusCode::BAD_REQUEST, "Invalid data format.".into())
             }
             AppError::MultipartError(e) => {
                 error!("Multipart error: {:?}", e);
-                (StatusCode::BAD_REQUEST, "Invalid multipart data.")
+                (StatusCode::BAD_REQUEST, "Invalid multipart data.".into())
             }
             AppError::IoError(e) => {
                 error!("IO error: {:?}", e);
-                (StatusCode::INTERNAL_SERVER_ERROR, "An I/O error occurred.")
+                (StatusCode::INTERNAL_SERVER_ERROR, format!("An I/O error occurred: {}", e))
             }
             AppError::BcryptError(e) => {
                 error!("Bcrypt error: {:?}", e);
-                (StatusCode::INTERNAL_SERVER_ERROR, "Password processing failed.")
+                (StatusCode::INTERNAL_SERVER_ERROR, "Password processing failed.".into())
             }
             AppError::ReqwestError(e) => {
                 error!("Reqwest error: {:?}", e);
                 if e.is_timeout() {
-                    (StatusCode::REQUEST_TIMEOUT, "Network request timed out.")
+                    (StatusCode::REQUEST_TIMEOUT, "Network request timed out.".into())
                 } else if e.is_connect() {
-                    (StatusCode::SERVICE_UNAVAILABLE, "Failed to connect to external service.")
+                    (StatusCode::SERVICE_UNAVAILABLE, "Failed to connect to external service.".into())
                 } else {
-                    (StatusCode::INTERNAL_SERVER_ERROR, "External service communication failed.")
+                    (StatusCode::INTERNAL_SERVER_ERROR, format!("External service communication failed: {}", e))
                 }
             }
-            AppError::GenericError(m) => (StatusCode::INTERNAL_SERVER_ERROR, m.as_str()),
+            AppError::GenericError(m) => (StatusCode::INTERNAL_SERVER_ERROR, m.clone()),
             AppError::InternalServerError => {
-                (StatusCode::INTERNAL_SERVER_ERROR, "An unexpected error occurred.")
+                (StatusCode::INTERNAL_SERVER_ERROR, "An unexpected error occurred.".into())
             }
         };
 

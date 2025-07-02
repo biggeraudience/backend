@@ -1,119 +1,151 @@
-// src/inquiries/handlers.rs
-use actix_web::{get, post, put, delete, web, HttpResponse};
-use sqlx::PgPool;
-use web::{Data, Json};
+use actix_web::{web, HttpResponse, post, get, put, delete};
+use sqlx::{PgPool, FromRow};
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
-// Removed: use chrono::Utc; // Not directly used in this file
+use time::OffsetDateTime;
 
-use crate::auth::models::Claims; // To get user ID if authenticated
 use crate::error::AppError;
-use crate::inquiries::models::{Inquiry, CreateInquiryPayload, UpdateInquiryStatusPayload};
 
-// Public Endpoint
-#[post("/")]
-pub async fn submit_inquiry(
-    pool: Data<PgPool>,
-    claims: Option<Claims>, // Option because inquiry can be from unregistered user
-    payload: Json<CreateInquiryPayload>,
+// --- Struct Definitions ---
+#[derive(Debug, Serialize, Deserialize, FromRow)]
+pub struct Inquiry {
+    pub id: Uuid,
+    pub user_id: Option<Uuid>, // Matches `ON DELETE SET NULL` in DB
+    pub name: String,
+    pub email: String,
+    pub phone: Option<String>, // Matches nullable `phone TEXT` in DB
+    pub subject: Option<String>, // Matches nullable `subject TEXT` in DB
+    pub message: String,
+    pub status: String,
+    pub created_at: OffsetDateTime,
+    pub updated_at: OffsetDateTime,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateInquiryPayload {
+    pub user_id: Option<Uuid>,
+    pub name: String,
+    pub email: String,
+    pub phone: Option<String>,
+    pub subject: Option<String>,
+    pub message: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateInquiryStatusPayload {
+    pub status: String,
+}
+
+// --- Handler Functions ---
+
+/// Handles creating a new inquiry.
+#[post("/inquiries")]
+pub async fn create_inquiry(
+    pool: web::Data<PgPool>,
+    payload: web::Json<CreateInquiryPayload>,
 ) -> Result<HttpResponse, AppError> {
-    // Basic validation
-    if payload.name.is_empty() || payload.email.is_empty() || payload.message.is_empty() {
-        return Err(AppError::ValidationError("Name, email, and message are required.".to_string()));
-    }
+    let now = OffsetDateTime::now_utc();
 
-    let user_id = claims.map(|c| c.user_id);
-
-    // Corrected: Explicitly specify Inquiry
-    let new_inquiry: Inquiry = sqlx::query_as!(
+    let inquiry = sqlx::query_as!(
         Inquiry,
         r#"
-        INSERT INTO inquiries (user_id, name, email, phone, subject, message, status)
-        VALUES ($1, $2, $3, $4, $5, $6, 'new')
+        INSERT INTO inquiries (user_id, name, email, phone, subject, message, status, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
         RETURNING id, user_id, name, email, phone, subject, message, status, created_at, updated_at
         "#,
-        user_id,
+        payload.user_id,
         payload.name,
         payload.email,
         payload.phone,
         payload.subject,
-        payload.message
+        payload.message,
+        "pending", // Default status for new inquiries
+        now,
+        now
     )
-    .fetch_one(pool.get_ref())
+    .fetch_one(&**pool)
     .await?;
 
-    Ok(HttpResponse::Created().json(new_inquiry))
+    Ok(HttpResponse::Created().json(inquiry))
 }
 
-// Admin Endpoints
-#[get("/")]
-pub async fn list_inquiries(pool: Data<PgPool>) -> Result<HttpResponse, AppError> {
-    // Corrected: Explicitly specify Vec<Inquiry>
-    let inquiries: Vec<Inquiry> = sqlx::query_as!(
+/// Handles fetching all inquiries.
+#[get("/inquiries")]
+pub async fn get_all_inquiries(pool: web::Data<PgPool>) -> Result<HttpResponse, AppError> {
+    let items = sqlx::query_as!(
         Inquiry,
-        r#"
-        SELECT id, user_id, name, email, phone, subject, message, status, created_at, updated_at
-        FROM inquiries
-        ORDER BY created_at DESC
-        "#
+        r#"SELECT id, user_id, name, email, phone, subject, message, status, created_at, updated_at FROM inquiries ORDER BY created_at DESC"#
     )
-    .fetch_all(pool.get_ref())
+    .fetch_all(&**pool)
     .await?;
 
-    Ok(HttpResponse::Ok().json(inquiries))
+    Ok(HttpResponse::Ok().json(items))
 }
 
-#[put("/{inquiry_id}/status")]
+/// Handles fetching a single inquiry by ID.
+#[get("/inquiries/{id}")]
+pub async fn get_inquiry_detail(
+    path: web::Path<Uuid>,
+    pool: web::Data<PgPool>,
+) -> Result<HttpResponse, AppError> {
+    let id = path.into_inner();
+
+    let inquiry = sqlx::query_as!(
+        Inquiry,
+        r#"SELECT id, user_id, name, email, phone, subject, message, status, created_at, updated_at FROM inquiries WHERE id = $1"#,
+        id
+    )
+    .fetch_optional(&**pool)
+    .await?;
+
+    match inquiry {
+        Some(i) => Ok(HttpResponse::Ok().json(i)),
+        None => Err(AppError::NotFound(format!("Inquiry with id {} not found", id))),
+    }
+}
+
+/// Handles updating the status of an inquiry.
+#[put("/inquiries/{id}/status")]
 pub async fn update_inquiry_status(
     path: web::Path<Uuid>,
-    pool: Data<PgPool>,
-    payload: Json<UpdateInquiryStatusPayload>,
+    pool: web::Data<PgPool>,
+    payload: web::Json<UpdateInquiryStatusPayload>,
 ) -> Result<HttpResponse, AppError> {
-    let inquiry_id = path.into_inner();
-    let new_status = payload.status.clone();
+    let id = path.into_inner();
+    let now = OffsetDateTime::now_utc();
 
-    // Basic status validation
-    if !["new", "in_progress", "resolved", "closed"].contains(&new_status.as_str()) {
-        return Err(AppError::ValidationError("Invalid status. Must be 'new', 'in_progress', 'resolved', or 'closed'".to_string()));
-    }
-
-    // Corrected: Explicitly specify Inquiry
-    let updated_inquiry: Inquiry = sqlx::query_as!(
+    let inquiry = sqlx::query_as!(
         Inquiry,
         r#"
-        UPDATE inquiries
-        SET status = $1
-        WHERE id = $2
+        UPDATE inquiries SET status = $1, updated_at = $2
+        WHERE id = $3
         RETURNING id, user_id, name, email, phone, subject, message, status, created_at, updated_at
         "#,
-        new_status,
-        inquiry_id
+        payload.status,
+        now,
+        id
     )
-    .fetch_one(pool.get_ref())
+    .fetch_one(&**pool)
     .await?;
 
-    Ok(HttpResponse::Ok().json(updated_inquiry))
+    Ok(HttpResponse::Ok().json(inquiry))
 }
 
-#[delete("/{inquiry_id}")]
+/// Handles deleting an inquiry.
+#[delete("/inquiries/{id}")]
 pub async fn delete_inquiry(
     path: web::Path<Uuid>,
-    pool: Data<PgPool>,
+    pool: web::Data<PgPool>,
 ) -> Result<HttpResponse, AppError> {
-    let inquiry_id = path.into_inner();
+    let id = path.into_inner();
 
-    let deleted_rows = sqlx::query!(
-        r#"
-        DELETE FROM inquiries
-        WHERE id = $1
-        "#,
-        inquiry_id
-    )
-    .execute(pool.get_ref())
-    .await?
-    .rows_affected();
+    let deleted_rows = sqlx::query!("DELETE FROM inquiries WHERE id = $1", id)
+        .execute(&**pool)
+        .await?
+        .rows_affected();
 
     if deleted_rows == 0 {
-        return Err(AppError::NotFound("Inquiry".to_string()));
+        return Err(AppError::NotFound(format!("Inquiry with id {} not found", id)));
     }
 
     Ok(HttpResponse::NoContent().finish())

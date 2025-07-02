@@ -1,7 +1,7 @@
 // src/users/models.rs
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
-use chrono::{DateTime, Utc};
+use time::OffsetDateTime; // Changed from chrono::{DateTime, Utc}
 use sqlx::FromRow;
 
 // Can reuse auth::models::User if no additional fields are needed,
@@ -14,8 +14,8 @@ pub struct User {
     #[serde(skip_serializing)]
     pub password_hash: String,
     pub role: String,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
+    pub created_at: OffsetDateTime, // Changed to OffsetDateTime
+    pub updated_at: OffsetDateTime, // Changed to OffsetDateTime
 }
 
 #[derive(Debug, Deserialize)]

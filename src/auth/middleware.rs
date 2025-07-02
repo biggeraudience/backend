@@ -3,10 +3,11 @@ use actix_web::{
     Error, HttpMessage, web
 };
 use futures_util::future::{Ready, ok, LocalBoxFuture};
-use std::{rc::Rc, task::{Context, Poll}};
+use std::rc::Rc; // Removed unused Context, Poll
 use crate::auth::models::Claims;
 use crate::error::AppError;
 use jsonwebtoken::{decode, DecodingKey, Validation};
+use actix_web::http::header::AUTHORIZATION;
 
 pub struct JwtAuth;
 
@@ -39,34 +40,49 @@ where
     type Error    = Error;
     type Future   = LocalBoxFuture<'static, Result<Self::Response, Self::Error>>;
 
-    forward_ready!(svc);
+    forward_ready!(svc); // Macro to implement poll_ready
 
     fn call(&self, mut req: ServiceRequest) -> Self::Future {
         let next = self.svc.clone();
         let path = req.path().to_owned();
+        let method = req.method().as_str();
 
-        // public endpoints
-        if path.starts_with("/auth/") 
-         || path.starts_with("/inquiries") 
-         || path.starts_with("/vehicles") {
+        // Define explicit public endpoints that bypass JWT authentication.
+        // Adjust these paths if your routes are nested under a common prefix like `/api`.
+        let is_public_route = (path.starts_with("/auth/")) || // All auth routes (register, login)
+                              (path.starts_with("/vehicles") && method == "GET") || // Public GET for vehicles (e.g., listings)
+                              (path.starts_with("/auctions") && method == "GET" && !path.ends_with("/bids")) || // Public GET for auctions (excluding specific bid endpoints)
+                              (path.starts_with("/inquiries") && method == "POST"); // Public POST for inquiry submission
+
+        if is_public_route {
+            // These routes are genuinely public and do not require authentication
             return Box::pin(async move { next.call(req).await });
         }
 
+        // For all other routes, require JWT authentication
         Box::pin(async move {
-            let header = req.headers().get("Authorization").and_then(|h| h.to_str().ok());
+            let header = req.headers().get(AUTHORIZATION).and_then(|h| h.to_str().ok());
+
             if let Some(hdr) = header {
                 if let Some(token) = hdr.strip_prefix("Bearer ") {
-                    let secret = req.app_data::<web::Data<String>>().unwrap();
+                    // Access the jwt_secret from app_data
+                    let secret = req.app_data::<web::Data<String>>()
+                        .ok_or_else(|| Error::from(AppError::InternalServerError("JWT secret not configured in application data.".to_string())))?
+                        .as_ref();
+
                     let data = decode::<Claims>(
                         token,
                         &DecodingKey::from_secret(secret.as_bytes()),
                         &Validation::default()
-                    ).map_err(AppError::JwtError)?;
-                    req.extensions_mut().insert(data.claims);
+                    ).map_err(|e| Error::from(AppError::JwtError(e)))?; // Convert jsonwebtoken error to AppError
+
+                    req.extensions_mut().insert(data.claims); // Insert claims into request extensions
                     return next.call(req).await;
                 }
             }
-            Err(AppError::Unauthorized.into())
+
+            // If no valid token or not a Bearer token
+            Err(Error::from(AppError::Unauthorized))
         })
     }
 }
@@ -102,7 +118,7 @@ where
     type Error    = Error;
     type Future   = LocalBoxFuture<'static, Result<Self::Response, Self::Error>>;
 
-    forward_ready!(svc);
+    forward_ready!(svc); // Macro to implement poll_ready
 
     fn call(&self, req: ServiceRequest) -> Self::Future {
         let next = self.svc.clone();
@@ -110,13 +126,13 @@ where
             let is_admin = req
                 .extensions()
                 .get::<Claims>()
-                .map(|c| c.role == "admin")
-                .unwrap_or(false);
+                .map(|c| c.role == "admin") // Assuming Claims has a 'role' field
+                .unwrap_or(false); // If no claims or no role, default to not admin
 
             if is_admin {
                 next.call(req).await
             } else {
-                Err(AppError::Forbidden.into())
+                Err(Error::from(AppError::Forbidden)) // Convert AppError to actix_web::Error
             }
         })
     }

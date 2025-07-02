@@ -1,100 +1,100 @@
-// src/vehicles/handlers.rs
-use actix_web::{get, post, put, delete, web, HttpResponse};
-use sqlx::PgPool;
-use web::{Data, Json};
+use actix_web::{web, HttpResponse, post, delete, put, get};
+use sqlx::{PgPool, FromRow, Postgres};
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
-use chrono::Utc; // Used for timestamps like updated_at
+use time::OffsetDateTime;
 
 use crate::error::AppError;
-use crate::vehicles::models::{Vehicle, CreateVehiclePayload, UpdateVehiclePayload};
 
-#[get("/")]
-pub async fn get_all_vehicles(pool: Data<PgPool>) -> Result<HttpResponse, AppError> {
-    // Explicitly specify Vec<Vehicle> as the return type
-    let list: Vec<Vehicle> = sqlx::query_as!(Vehicle, r#"
-        SELECT
-            id, make, model, year, price, mileage, exterior_color, interior_color, engine,
-            transmission, fuel_type, image_urls, features, description, status, is_featured,
-            created_at, updated_at
-        FROM vehicles
-        ORDER BY created_at DESC
-        "#)
-        .fetch_all(pool.get_ref())
-        .await?;
-    Ok(HttpResponse::Ok().json(list))
+// --- Struct Definitions ---
+#[derive(Debug, Serialize, Deserialize, FromRow)]
+pub struct Vehicle {
+    pub id: Uuid,
+    pub make: String,
+    pub model: String,
+    pub year: i32,
+    pub price: f64, // Use f64 for DECIMAL(12,2) in Rust, requires `bigdecimal` feature if you want `BigDecimal` type
+    pub mileage: Option<i32>,
+    pub exterior_color: Option<String>,
+    pub interior_color: Option<String>,
+    pub engine: Option<String>,
+    pub transmission: Option<String>,
+    pub fuel_type: Option<String>,
+    #[sqlx(json)]
+    pub image_urls: Vec<String>,
+    #[sqlx(json)]
+    pub features: Vec<String>,
+    pub description: Option<String>,
+    pub status: String,
+    pub is_featured: bool,
+    pub created_at: OffsetDateTime,
+    pub updated_at: OffsetDateTime,
 }
 
-#[get("/{vehicle_id}")]
-pub async fn get_vehicle_detail(
-    path: web::Path<Uuid>,
-    pool: Data<PgPool>,
-) -> Result<HttpResponse, AppError> {
-    let vehicle_id = path.into_inner();
-    // Explicitly specify Vehicle as the return type
-    let vehicle: Vehicle = sqlx::query_as!(
-        Vehicle,
-        r#"
-        SELECT
-            id, make, model, year, price, mileage, exterior_color, interior_color, engine,
-            transmission, fuel_type, image_urls, features, description, status, is_featured,
-            created_at, updated_at
-        FROM vehicles
-        WHERE id = $1
-        "#,
-        vehicle_id
-    )
-    .fetch_optional(pool.get_ref())
-    .await?
-    .ok_or_else(|| AppError::NotFound("Vehicle".to_string()))?;
-
-    Ok(HttpResponse::Ok().json(vehicle))
+#[derive(Debug, Deserialize)]
+pub struct CreateVehiclePayload {
+    pub make: String,
+    pub model: String,
+    pub year: i32,
+    pub price: f64,
+    pub mileage: Option<i32>,
+    pub exterior_color: Option<String>,
+    pub interior_color: Option<String>,
+    pub engine: Option<String>,
+    pub transmission: Option<String>,
+    pub fuel_type: Option<String>,
+    pub image_urls: Vec<String>,
+    pub features: Vec<String>,
+    pub description: Option<String>,
+    pub status: Option<String>,
+    pub is_featured: Option<bool>,
 }
 
-#[get("/featured")]
-pub async fn get_featured_vehicles(pool: Data<PgPool>) -> Result<HttpResponse, AppError> {
-    // Explicitly specify Vec<Vehicle> as the return type
-    let featured_vehicles: Vec<Vehicle> = sqlx::query_as!(
-        Vehicle,
-        r#"
-        SELECT
-            id, make, model, year, price, mileage, exterior_color, interior_color, engine,
-            transmission, fuel_type, image_urls, features, description, status, is_featured,
-            created_at, updated_at
-        FROM vehicles
-        WHERE is_featured = TRUE AND status = 'available'
-        ORDER BY created_at DESC
-        LIMIT 10 -- Example limit
-        "#
-    )
-    .fetch_all(pool.get_ref())
-    .await?;
-    Ok(HttpResponse::Ok().json(featured_vehicles))
+#[derive(Debug, Deserialize)]
+pub struct UpdateVehiclePayload {
+    pub make: Option<String>,
+    pub model: Option<String>,
+    pub year: Option<i32>,
+    pub price: Option<f64>,
+    pub mileage: Option<i32>,
+    pub exterior_color: Option<String>,
+    pub interior_color: Option<String>,
+    pub engine: Option<String>,
+    pub transmission: Option<String>,
+    pub fuel_type: Option<String>,
+    pub image_urls: Option<Vec<String>>,
+    pub features: Option<Vec<String>>,
+    pub description: Option<String>,
+    pub status: Option<String>,
+    pub is_featured: Option<bool>,
 }
 
+// --- Handler Functions ---
 
-#[post("/")]
+/// Handles creating a new vehicle.
+#[post("/vehicles")]
 pub async fn create_vehicle(
-    pool: Data<PgPool>,
-    payload: Json<CreateVehiclePayload>,
+    pool: web::Data<PgPool>,
+    payload: web::Json<CreateVehiclePayload>,
 ) -> Result<HttpResponse, AppError> {
-    // Basic validation (add more as needed)
-    if payload.make.is_empty() || payload.model.is_empty() || payload.year == 0 || payload.price == 0.0 {
-        return Err(AppError::ValidationError("Make, model, year, and price are required.".to_string()));
-    }
+    let now = OffsetDateTime::now_utc();
+    let status = payload.status.as_deref().unwrap_or("available");
+    let is_featured = payload.is_featured.unwrap_or(false);
 
-    // Explicitly specify Vehicle as the return type
-    let new_vehicle: Vehicle = sqlx::query_as!(
+    let new_vehicle = sqlx::query_as!(
         Vehicle,
         r#"
         INSERT INTO vehicles (
-            make, model, year, price, mileage, exterior_color, interior_color, engine,
-            transmission, fuel_type, image_urls, features, description, status, is_featured
+            make, model, year, price, mileage, exterior_color, interior_color,
+            engine, transmission, fuel_type, image_urls, features, description,
+            status, is_featured, created_at, updated_at
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
-        RETURNING
-            id, make, model, year, price, mileage, exterior_color, interior_color, engine,
-            transmission, fuel_type, image_urls, features, description, status, is_featured,
-            created_at, updated_at
+        VALUES (
+            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17
+        )
+        RETURNING id, make, model, year, price, mileage, exterior_color, interior_color,
+            engine, transmission, fuel_type, image_urls, features, description,
+            status, is_featured, created_at, updated_at
         "#,
         payload.make,
         payload.model,
@@ -106,100 +106,181 @@ pub async fn create_vehicle(
         payload.engine,
         payload.transmission,
         payload.fuel_type,
-        &payload.image_urls, // Bind as array
-        &payload.features,   // Bind as array
+        &payload.image_urls, // Borrow here
+        &payload.features,   // Borrow here
         payload.description,
-        payload.status.clone().unwrap_or_else(|| "available".to_string()),
-        payload.is_featured.unwrap_or(false)
+        status,
+        is_featured,
+        now,
+        now
     )
-    .fetch_one(pool.get_ref())
+    .fetch_one(&**pool)
     .await?;
 
     Ok(HttpResponse::Created().json(new_vehicle))
 }
 
-#[put("/{vehicle_id}")]
+/// Handles updating an existing vehicle.
+#[put("/vehicles/{id}")]
 pub async fn update_vehicle(
     path: web::Path<Uuid>,
-    pool: Data<PgPool>,
-    payload: Json<UpdateVehiclePayload>,
+    pool: web::Data<PgPool>,
+    payload: web::Json<UpdateVehiclePayload>,
 ) -> Result<HttpResponse, AppError> {
-    let vehicle_id = path.into_inner();
+    let id = path.into_inner();
+    let now = OffsetDateTime::now_utc();
 
-    // Explicitly specify Vehicle as the return type
-    let updated_vehicle: Vehicle = sqlx::query_as!(
-        Vehicle,
-        r#"
-        UPDATE vehicles
-        SET
-            make = COALESCE($1, make),
-            model = COALESCE($2, model),
-            year = COALESCE($3, year),
-            price = COALESCE($4, price),
-            mileage = COALESCE($5, mileage),
-            exterior_color = COALESCE($6, exterior_color),
-            interior_color = COALESCE($7, interior_color),
-            engine = COALESCE($8, engine),
-            transmission = COALESCE($9, transmission),
-            fuel_type = COALESCE($10, fuel_type),
-            image_urls = COALESCE($11, image_urls),
-            features = COALESCE($12, features),
-            description = COALESCE($13, description),
-            status = COALESCE($14, status),
-            is_featured = COALESCE($15, is_featured),
-            updated_at = $16
-        WHERE id = $17
-        RETURNING
-            id, make, model, year, price, mileage, exterior_color, interior_color, engine,
-            transmission, fuel_type, image_urls, features, description, status, is_featured,
-            created_at, updated_at
-        "#,
-        payload.make,
-        payload.model,
-        payload.year,
-        payload.price,
-        payload.mileage,
-        payload.exterior_color,
-        payload.interior_color,
-        payload.engine,
-        payload.transmission,
-        payload.fuel_type,
-        // For array types, you usually need to pass a reference to a slice or Vec
-        payload.image_urls.as_ref().map(|v| v as _), // Cast to &[_] or &Vec<String>
-        payload.features.as_ref().map(|v| v as _),
-        payload.description,
-        payload.status,
-        payload.is_featured,
-        Utc::now(), // Set updated_at to current time
-        vehicle_id
-    )
-    .fetch_one(pool.get_ref())
-    .await?;
+    let mut query_builder: sqlx::QueryBuilder<Postgres> =
+        sqlx::QueryBuilder::new("UPDATE vehicles SET updated_at = ");
+    query_builder.push_bind(now);
+
+    // Conditionally add fields to update, borrowing from payload
+    if let Some(make) = &payload.make { // Borrow
+        query_builder.push(", make = ");
+        query_builder.push_bind(make);
+    }
+    if let Some(model) = &payload.model { // Borrow
+        query_builder.push(", model = ");
+        query_builder.push_bind(model);
+    }
+    if let Some(year) = payload.year {
+        query_builder.push(", year = ");
+        query_builder.push_bind(year);
+    }
+    if let Some(price) = payload.price {
+        query_builder.push(", price = ");
+        query_builder.push_bind(price);
+    }
+    if let Some(mileage) = payload.mileage {
+        query_builder.push(", mileage = ");
+        query_builder.push_bind(mileage);
+    }
+    if let Some(exterior_color) = &payload.exterior_color { // Borrow
+        query_builder.push(", exterior_color = ");
+        query_builder.push_bind(exterior_color);
+    }
+    if let Some(interior_color) = &payload.interior_color { // Borrow
+        query_builder.push(", interior_color = ");
+        query_builder.push_bind(interior_color);
+    }
+    if let Some(engine) = &payload.engine { // Borrow
+        query_builder.push(", engine = ");
+        query_builder.push_bind(engine);
+    }
+    if let Some(transmission) = &payload.transmission { // Borrow
+        query_builder.push(", transmission = ");
+        query_builder.push_bind(transmission);
+    }
+    if let Some(fuel_type) = &payload.fuel_type { // Borrow
+        query_builder.push(", fuel_type = ");
+        query_builder.push_bind(fuel_type);
+    }
+    if let Some(image_urls) = &payload.image_urls { // Already borrowing from before
+        query_builder.push(", image_urls = ");
+        query_builder.push_bind(image_urls);
+    }
+    if let Some(features) = &payload.features { // Already borrowing from before
+        query_builder.push(", features = ");
+        query_builder.push_bind(features);
+    }
+    if let Some(description) = &payload.description { // Borrow
+        query_builder.push(", description = ");
+        query_builder.push_bind(description);
+    }
+    if let Some(status) = &payload.status { // Borrow
+        query_builder.push(", status = ");
+        query_builder.push_bind(status);
+    }
+    if let Some(is_featured) = payload.is_featured {
+        query_builder.push(", is_featured = ");
+        query_builder.push_bind(is_featured);
+    }
+
+    query_builder.push(" WHERE id = ");
+    query_builder.push_bind(id);
+    query_builder.push(" RETURNING id, make, model, year, price, mileage, exterior_color, interior_color,
+            engine, transmission, fuel_type, image_urls, features, description,
+            status, is_featured, created_at, updated_at");
+
+
+    let updated_vehicle = query_builder
+        .build_query_as::<Vehicle>()
+        .fetch_one(&**pool)
+        .await?;
 
     Ok(HttpResponse::Ok().json(updated_vehicle))
 }
 
-#[delete("/{vehicle_id}")]
+/// Handles deleting a vehicle.
+#[delete("/vehicles/{id}")]
 pub async fn delete_vehicle(
     path: web::Path<Uuid>,
-    pool: Data<PgPool>,
+    pool: web::Data<PgPool>,
 ) -> Result<HttpResponse, AppError> {
-    let vehicle_id = path.into_inner();
+    let id = path.into_inner();
 
-    let deleted_rows = sqlx::query!(
-        r#"
-        DELETE FROM vehicles
-        WHERE id = $1
-        "#,
-        vehicle_id
-    )
-    .execute(pool.get_ref())
-    .await?
-    .rows_affected();
+    let deleted_rows = sqlx::query!("DELETE FROM vehicles WHERE id = $1", id)
+        .execute(&**pool)
+        .await?
+        .rows_affected();
 
     if deleted_rows == 0 {
-        return Err(AppError::NotFound("Vehicle".to_string()));
+        return Err(AppError::NotFound(format!("Vehicle with id {} not found", id)));
     }
 
     Ok(HttpResponse::NoContent().finish())
+}
+
+/// Handles fetching all vehicles.
+#[get("/vehicles")]
+pub async fn get_all_vehicles(pool: web::Data<PgPool>) -> Result<HttpResponse, AppError> {
+    let vehicles = sqlx::query_as!(
+        Vehicle,
+        r#"SELECT id, make, model, year, price, mileage, exterior_color, interior_color,
+            engine, transmission, fuel_type, image_urls, features, description,
+            status, is_featured, created_at, updated_at FROM vehicles ORDER BY created_at DESC"#
+    )
+    .fetch_all(&**pool)
+    .await?;
+
+    Ok(HttpResponse::Ok().json(vehicles))
+}
+
+/// Handles fetching a single vehicle by ID.
+#[get("/vehicles/{id}")]
+pub async fn get_vehicle_detail(
+    path: web::Path<Uuid>,
+    pool: web::Data<PgPool>,
+) -> Result<HttpResponse, AppError> {
+    let id = path.into_inner();
+
+    let vehicle = sqlx::query_as!(
+        Vehicle,
+        r#"SELECT id, make, model, year, price, mileage, exterior_color, interior_color,
+            engine, transmission, fuel_type, image_urls, features, description,
+            status, is_featured, created_at, updated_at FROM vehicles WHERE id = $1"#,
+        id
+    )
+    .fetch_optional(&**pool)
+    .await?;
+
+    match vehicle {
+        Some(v) => Ok(HttpResponse::Ok().json(v)),
+        None => Err(AppError::NotFound(format!("Vehicle with id {} not found", id))),
+    }
+}
+
+/// Handles fetching featured vehicles.
+#[get("/vehicles/featured")]
+pub async fn get_featured_vehicles(pool: web::Data<PgPool>) -> Result<HttpResponse, AppError> {
+    let vehicles = sqlx::query_as!(
+        Vehicle,
+        r#"SELECT id, make, model, year, price, mileage, exterior_color, interior_color,
+            engine, transmission, fuel_type, image_urls, features, description,
+            status, is_featured, created_at, updated_at FROM vehicles WHERE is_featured = TRUE ORDER BY created_at DESC"#
+    )
+    .fetch_all(&**pool)
+    .await?;
+
+    Ok(HttpResponse::Ok().json(vehicles))
 }

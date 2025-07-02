@@ -1,6 +1,6 @@
 use actix_web::{post, web, HttpResponse};
 use sqlx::PgPool;
-use chrono::Utc;
+use time::{OffsetDateTime, Duration};
 use crate::auth::models::{RegisterPayload, LoginPayload, AuthTokenResponse, User, Claims};
 use crate::auth::utils::{hash_password, verify_password, create_jwt};
 use crate::error::AppError;
@@ -18,17 +18,19 @@ pub async fn register(
     }
 
     let hashed = hash_password(&payload.password).await?;
-    let new_user: User = sqlx::query_as!(
-        User,
+    let now = OffsetDateTime::now_utc();
+
+    let new_user: User = sqlx::query_as::<_, User>(
         r#"
-        INSERT INTO users (username, email, password_hash, role)
-        VALUES ($1, $2, $3, 'user')
+        INSERT INTO users (username, email, password_hash, role, created_at, updated_at)
+        VALUES ($1, $2, $3, 'user', $4, $4)
         RETURNING id, username, email, password_hash, role, created_at, updated_at
-        "#,
-        payload.username,
-        payload.email,
-        hashed
+        "#
     )
+    .bind(payload.username.clone())
+    .bind(payload.email.clone())
+    .bind(hashed)
+    .bind(now)
     .fetch_one(pool.get_ref())
     .await?;
 
@@ -45,15 +47,14 @@ pub async fn login(
         return Err(AppError::ValidationError("Email and password are required.".to_string()));
     }
 
-    let user: User = sqlx::query_as!(
-        User,
+    let user: User = sqlx::query_as::<_, User>(
         r#"
         SELECT id, username, email, password_hash, role, created_at, updated_at
         FROM users
         WHERE email = $1
-        "#,
-        payload.email
+        "#
     )
+    .bind(payload.email.clone())
     .fetch_optional(pool.get_ref())
     .await?
     .ok_or_else(|| AppError::AuthError("Invalid credentials.".to_string()))?;
@@ -62,10 +63,7 @@ pub async fn login(
         return Err(AppError::AuthError("Invalid credentials.".to_string()));
     }
 
-    let exp = Utc::now()
-        .checked_add_signed(chrono::Duration::days(7))
-        .unwrap()
-        .timestamp() as usize;
+    let exp = (OffsetDateTime::now_utc() + Duration::days(7)).unix_timestamp() as usize;
 
     let claims = Claims { user_id: user.id, role: user.role.clone(), exp };
     let token = create_jwt(claims, jwt_secret.get_ref())?;

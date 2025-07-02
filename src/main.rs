@@ -10,16 +10,24 @@ mod users;
 mod vehicles;
 mod auctions;
 mod inquiries;
-mod utils;
+mod utils; // Make sure this module exists and contains cloudinary
 
+// Correct import for handle_upload from the utils/cloudinary module
 use utils::cloudinary::handle_upload;
+
+// Alias handlers for cleaner use in main.rs
+use auth::handlers as auth_handlers;
+use users::handlers as users_handlers;
+use vehicles::handlers as vehicles_handlers;
+use auctions::handlers as auctions_handlers;
+use inquiries::handlers as inquiries_handlers;
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
-  
-    std::env::set_var("SQLX_OFFLINE", "true");
+    // IMPORTANT: Remove or comment out this line if you want sqlx to check against your live DB schema.
+    // std::env::set_var("SQLX_OFFLINE", "true");
 
-   
+    // Initialize tracing subscriber for logging
     tracing_subscriber::registry()
         .with(
             tracing_subscriber::EnvFilter::new(
@@ -33,8 +41,8 @@ async fn main() -> std::io::Result<()> {
     // Load .env (if present) and then our required env vars
     dotenvy::dotenv().ok();
     let database_url = env::var("DATABASE_URL").expect("DATABASE_URL missing");
-    let jwt_secret   = env::var("JWT_SECRET").expect("JWT_SECRET missing");
-    let port: u16    = env::var("PORT")
+    let jwt_secret = env::var("JWT_SECRET").expect("JWT_SECRET missing"); // This needs to be available to middleware
+    let port: u16 = env::var("PORT")
         .unwrap_or_else(|_| "8000".into())
         .parse()
         .expect("PORT must be a number");
@@ -43,7 +51,7 @@ async fn main() -> std::io::Result<()> {
     let pool = db::connection::get_connection_pool(&database_url)
         .await
         .expect("Failed to create DB pool");
-    sqlx::migrate!("./src/db/migrations")
+    sqlx::migrate!("./src/db/migrations") // Ensure this path is correct relative to Cargo.toml
         .run(&pool)
         .await
         .expect("Database migrations failed");
@@ -55,6 +63,7 @@ async fn main() -> std::io::Result<()> {
         // CORS policy
         let cors = Cors::default()
             .allowed_origin_fn(|origin, _req| {
+                // In debug mode, allow all origins. In release, restrict to your domain.
                 cfg!(debug_assertions)
                     || origin.as_bytes().ends_with(b"mangaautomobiles.com")
             })
@@ -68,82 +77,105 @@ async fn main() -> std::io::Result<()> {
             .wrap(actix_web::middleware::Logger::default())
             // shared app state
             .app_data(web::Data::new(pool.clone()))
-            .app_data(web::Data::new(jwt_secret.clone()))
+            .app_data(web::Data::new(jwt_secret.clone())) // Pass JWT secret to app_data
             // healthcheck
             .route(
                 "/",
                 web::get().to(|| async { HttpResponse::Ok().body("🚀 Manga Autos API up!") }),
             )
 
-            // ─── AUTH ─────────────────────────────────────────
+            // --- AUTH ROUTES ---
             .service(
                 web::scope("/auth")
-                    .service(auth::handlers::register)
-                    .service(auth::handlers::login),
+                    .service(auth_handlers::register_user) // Renamed from 'register'
+                    .service(auth_handlers::login_user),    // Renamed from 'login'
             )
 
-            // ─── VEHICLES ─────────────────────────────────────
+            // --- PUBLIC VEHICLE ROUTES ---
+            // These routes are intentionally public for displaying vehicle listings.
             .service(
                 web::scope("/vehicles")
-                    .service(vehicles::handlers::get_all_vehicles)
-                    .service(vehicles::handlers::get_vehicle_detail)
-                    .service(vehicles::handlers::get_featured_vehicles),
+                    .service(vehicles_handlers::get_all_vehicles)
+                    .service(vehicles_handlers::get_vehicle_detail)
+                    .service(vehicles_handlers::get_featured_vehicles),
             )
+
+            // --- ADMIN VEHICLE ROUTES ---
+            // These routes require JWT authentication and an 'admin' role.
             .service(
                 web::scope("/admin/vehicles")
                     .wrap(auth::middleware::JwtAuth)
                     .wrap(auth::middleware::AdminRoleCheck)
-                    .service(vehicles::handlers::create_vehicle)
-                    .service(vehicles::handlers::update_vehicle)
-                    .service(vehicles::handlers::delete_vehicle)
-                    .route("/upload", web::post().to(handle_upload)),
+                    .service(vehicles_handlers::create_vehicle)
+                    .service(vehicles_handlers::update_vehicle)
+                    .service(vehicles_handlers::delete_vehicle)
+                    .route("/upload", web::post().to(handle_upload)), // Cloudinary upload
             )
 
-            // ─── AUCTIONS ─────────────────────────────────────
+            // --- PUBLIC AUCTION ROUTES ---
+            // These GET routes are public for viewing auctions.
             .service(
                 web::scope("/auctions")
-                    .service(auctions::handlers::get_all_auctions)
-                    .service(auctions::handlers::get_auction_detail)
-                    .wrap(auth::middleware::JwtAuth)
-                    .service(auctions::handlers::place_bid),
+                    .service(auctions_handlers::get_all_auctions)
+                    .service(auctions_handlers::get_auction_detail),
             )
+
+            // --- AUTHENTICATED BIDDING ROUTES ---
+            // Placing a bid requires a logged-in user (JWT), but not necessarily admin.
+            .service(
+                web::scope("/auctions")
+                    .wrap(auth::middleware::JwtAuth)
+                    .service(auctions_handlers::create_bid), // POST /auctions/{id}/bids
+            )
+
+            // --- ADMIN AUCTION ROUTES ---
+            // These routes require JWT authentication and an 'admin' role for auction management.
             .service(
                 web::scope("/admin/auctions")
                     .wrap(auth::middleware::JwtAuth)
                     .wrap(auth::middleware::AdminRoleCheck)
-                    .service(auctions::handlers::create_auction)
-                    .service(auctions::handlers::update_auction)
-                    .service(auctions::handlers::delete_auction),
+                    .service(auctions_handlers::create_auction)
+                    .service(auctions_handlers::update_auction)
+                    .service(auctions_handlers::delete_auction),
             )
 
-            // ─── INQUIRIES ────────────────────────────────────
+            // --- PUBLIC INQUIRY ROUTES ---
+            // Submitting an inquiry is public.
             .service(
                 web::scope("/inquiries")
-                    .service(inquiries::handlers::submit_inquiry),
+                    .service(inquiries_handlers::create_inquiry), // Renamed from 'submit_inquiry'
             )
+
+            // --- ADMIN INQUIRY ROUTES ---
+            // Managing inquiries requires JWT authentication and an 'admin' role.
             .service(
                 web::scope("/admin/inquiries")
                     .wrap(auth::middleware::JwtAuth)
                     .wrap(auth::middleware::AdminRoleCheck)
-                    .service(inquiries::handlers::list_inquiries)
-                    .service(inquiries::handlers::update_inquiry_status)
-                    .service(inquiries::handlers::delete_inquiry),
+                    .service(inquiries_handlers::get_all_inquiries) // Renamed from 'list_inquiries'
+                    .service(inquiries_handlers::get_inquiry_detail)
+                    .service(inquiries_handlers::update_inquiry_status)
+                    .service(inquiries_handlers::delete_inquiry),
             )
 
-            // ─── USERS ────────────────────────────────────────
+            // --- USER-SPECIFIC ROUTES ---
+            // These routes are for a logged-in user to manage their own profile.
             .service(
                 web::scope("/users")
-                    .wrap(auth::middleware::JwtAuth)
-                    .service(users::handlers::get_me)
-                    .service(users::handlers::update_me),
+                    .wrap(auth::middleware::JwtAuth) // Requires JWT, no admin role needed.
+                    .service(users_handlers::get_me)
+                    .service(users_handlers::update_me),
             )
+
+            // --- ADMIN USER MANAGEMENT ROUTES ---
+            // These routes are for administrators to manage all user accounts.
             .service(
                 web::scope("/admin/users")
                     .wrap(auth::middleware::JwtAuth)
                     .wrap(auth::middleware::AdminRoleCheck)
-                    .service(users::handlers::list_users)
-                    .service(users::handlers::get_user_by_id)
-                    .service(users::handlers::update_user_role),
+                    .service(users_handlers::list_users)
+                    .service(users_handlers::get_user_by_id)
+                    .service(users_handlers::update_user_role),
             )
 
             // catch 404
