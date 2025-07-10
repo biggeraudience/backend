@@ -2,39 +2,27 @@
 name = "backend"
 version = "0.1.0"
 edition = "2021"
-publish = false
 
 [dependencies]
-actix-web             = "4"
-actix-cors            = "0.6"
-actix-multipart       = "0.6"
-serde                 = { version = "1.0", features = ["derive"] }
-serde_json            = "1.0"
-jsonwebtoken          = "8"
-bcrypt                = "0.15"
-tracing               = "0.1"
-tracing-subscriber     = { version = "0.3", features = ["env-filter", "fmt"] }
-dotenvy               = "0.15"
-thiserror             = "1.0"
-sqlx                  = { version = "0.7", features = [
-    "runtime-tokio-native-tls",
-    "postgres",
-    "macros",
-    "time",
-    "uuid",
-    "json",
-] }
-sqlx-types-bigdecimal = { version = "0.2.1", features = ["sqlx07"] }
-uuid                  = { version = "1.0", features = ["serde", "v4"] }
-time                  = { version = "0.3", features = ["macros", "serde", "std"] }
-reqwest               = { version = "0.11", features = ["json","multipart","rustls-tls"] }
-mime_guess            = "2.0"
-once_cell             = "1.20"
-validator             = { version = "0.16", features = ["derive"] }
-sha1                  = "0.10"
-hex                   = "0.4"
-futures-util          = "0.3"
+axum = { version = "0.7", features = ["json"] }
+tokio = { version = "1", features = ["macros","rt-multi-thread"] }
+dotenvy = "0.15"
+envy = "0.4"
+lazy_static = "1.4"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+chrono = { version = "0.4", features = ["serde"] }
+sqlx = { version = "0.7", features = ["runtime-tokio-native-tls","postgres","macros","migrate"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["fmt","env-filter"] }
+uuid = { version = "1", features = ["serde", "v4"] }
+anyhow = "1.0"
+bcrypt = "0.12"
+reqwest = { version = "0.11", features = ["json","rustls-tls"] }
+tower-http = { version = "0.3", features = ["cors"] }
 
-[dev-dependencies]
-tokio                  = { version = "1", features = ["macros","rt-multi-thread"] }
-sqlx-cli               = { version = "0.7", features = ["postgres"] }
+# Pure-Rust JWT deps instead of ring-based jsonwebtoken
+hmac = "0.12"
+sha2 = "0.10"
+base64 = "0.21"
+
