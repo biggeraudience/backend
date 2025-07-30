@@ -1,4 +1,3 @@
-// backend/src/server.js
 import http from 'http';
 import app from './app.js';
 import config from './config/index.js';

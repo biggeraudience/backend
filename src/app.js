@@ -1,42 +1,40 @@
-// backend/src/app.js
 import express from 'express';
 import cors from 'cors';
 import morgan from 'morgan';
 import config from './config/index.js';
 import connectMongo from './utils/db.js';
+import { errorHandler } from './middleware/errorHandler.js';
+
 import authRoutes from './routes/auth.js';
+import userRoutes from './routes/users.js';
 import vehicleRoutes from './routes/vehicles.js';
 import auctionRoutes from './routes/auctions.js';
 import inquiryRoutes from './routes/inquiries.js';
-import userRoutes from './routes/users.js';
-import { errorHandler } from './middleware/errorHandler.js';
 import { authenticateJWT } from './middleware/auth.js';
 
 const app = express();
 
 // Middleware
-app.use(cors());
+app.use(cors({ origin: true }));  // allow all origins
 app.use(express.json({ limit: '10mb' }));
 app.use(morgan('dev'));
 
-// Mount public/auth routes
-app.use('/auth', authRoutes);
+// Public auth routes
+app.use('/api/auth', authRoutes);
 
-// Protect all following routes
+// Protect all routes below
 app.use(authenticateJWT);
 
-// Mount resource routes
-app.use('/vehicles', vehicleRoutes);
-app.use('/auctions', auctionRoutes);
-app.use('/admin/vehicles', vehicleRoutes);     // admin CRUD
-app.use('/admin/auctions', auctionRoutes);     // admin CRUD
-app.use('/admin/inquiries', inquiryRoutes);
-app.use('/admin/users', userRoutes);
+// Protected routes
+app.use('/api/users', userRoutes);
+app.use('/api/vehicles', vehicleRoutes);
+app.use('/api/auctions', auctionRoutes);
+app.use('/api/inquiries', inquiryRoutes);
 
-// Global error handler
+// Error handler
 app.use(errorHandler);
 
-// Connect DB & export app
+// Connect to MongoDB
 (async () => {
   await connectMongo(config.mongoUri);
   console.log('✅ MongoDB connected');
