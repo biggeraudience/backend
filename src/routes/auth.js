@@ -7,7 +7,7 @@ const router = express.Router();
 // POST /api/auth/register
 router.post('/register', async (req, res, next) => {
   try {
-    const { username, email, password } = req.body;
+    const { username, email, password, role } = req.body;
     if (!username || !email || !password) {
       return res.status(400).json({ message: 'Missing fields' });
     }
@@ -15,11 +15,16 @@ router.post('/register', async (req, res, next) => {
     if (exists) {
       return res.status(400).json({ message: 'Email already in use' });
     }
-    const user = new User({ username, email });
+    // allow role override (default to 'user')
+    const user = new User({ username, email, role: role || 'user' });
     user.password = password;
     await user.save();
+
     const token = signToken({ id: user._id });
-    res.status(201).json({ token, user: { id: user._id, username, email } });
+    res.status(201).json({
+      token,
+      user: { id: user._id, username, email, role: user.role },
+    });
   } catch (err) {
     next(err);
   }
@@ -37,7 +42,15 @@ router.post('/login', async (req, res, next) => {
       return res.status(401).json({ message: 'Invalid email or password' });
     }
     const token = signToken({ id: user._id });
-    res.json({ token, user: { id: user._id, username: user.username, email } });
+    res.json({
+      token,
+      user: {
+        id:       user._id,
+        username: user.username,
+        email,
+        role:     user.role,
+      },
+    });
   } catch (err) {
     next(err);
   }
